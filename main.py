@@ -19,7 +19,7 @@ from sklearn.preprocessing import PolynomialFeatures
 from sklearn.linear_model import LinearRegression
 from skimage.transform import resize
 
-from utilities import intensity_flat_field_mask
+from utilities import intensity_flat_field_mask, oir_to_tif
 
 # Add path
 os.environ["JAVA_HOME"] = r"C:\Program Files\Eclipse Adoptium\jdk-21.0.8.9-hotspot"
@@ -34,7 +34,7 @@ stitched_files_folder = r"\NoRI\Masha\Stitched"
 powersetting='UP'
 merge_order = ["NORI_c1", "NORI_c2", "NORI_c3"]#, "IF_c1", "IF_c2", "IF_c3", "IF_c4"]
 file_separator = '_MAP'
-overwrite_files = True
+overwrite_files = False
 drive_letter = "Z:"
 network_path = r"\\research.files.med.harvard.edu\Sysbio"
 calibration_folder = os.path.join(drive_letter + r"\NoRI\Calibration Archive\20250903 calibration")
@@ -155,6 +155,62 @@ for size in [256, 512, 640, 800, 1024, 2048, 4096]:
     masks[f"lipid_{size}"]   = intensity_flat_field_mask(n_lipid, size, size)
     masks[f"water_{size}"]   = intensity_flat_field_mask(n_water, size, size)
 
+# Process all nori files inside data directory
+for folder in folders[3:]:
+    print(folder)
+    # Folders for outputs
+    os.makedirs(os.path.join(path, folder, rename_files_folder), exist_ok=True)
+    os.makedirs(os.path.join(path, folder, bg_files_folder), exist_ok=True)
+    os.makedirs(os.path.join(path, folder, ffc_files_folder), exist_ok=True)
+    os.makedirs(os.path.join(path, folder, decomp_files_folder), exist_ok=True)
+    os.makedirs(os.path.join(path, folder, stitched_files_folder), exist_ok=True)
+    composite_dir = os.path.join(path, folder, decomp_files_folder, 'composite')
+    os.makedirs(composite_dir, exist_ok=True)
 
+    for root, dirs, files in os.walk(os.path.join(path, folder)):
+        oir_files = glob.glob(os.path.join(root, "**", OIR_EXT), recursive=True)
+        if len(oir_files)>0:
+            for oir_file in oir_files:
+                if 'Zone.Identifier' not in oir_file:
+                    file_name = oir_file.split('\\')[-1].split('.oir')[0]
+                    if file_name[:3]!='Map':
+                        # Convert oir files to tif
+                        tif_path = oir_file.replace('.oir', '.tif')
+                        is_file_exist = os.path.exists(tif_path)
+                        if (overwrite_files) | (not is_file_exist):
+                            oir_to_tif(oir_file, ij, tif_path)
+    
+                        # if '_NORI_' in file_name:
+                        #     # Rename files with matching channel names 
+                        #     if '_Cycle_02\\' in oir_file:
+                        #         renamed_file = file_name + '_channel_waterUP.tif'
+                        #         immask_channel = masks[f'water_{str(image_np.values.shape[0])}']
+                        #     elif '_Cycle_01\\' in oir_file:
+                        #         renamed_file = file_name + '_channel_lipidUP.tif'
+                        #         immask_channel = masks[f'lipid_{str(image_np.values.shape[0])}']
+                        #     elif '_Cycle\\' in oir_file:
+                        #         renamed_file = file_name + '_channel_proteinUP.tif'
+                        #         immask_channel = masks[f'protein_{str(image_np.values.shape[0])}']
+                        #     else:
+                        #         continue
+                        #     tiff.imwrite(os.path.join(path, folder, rename_files_folder, renamed_file), image_np.astype('float32'))
+        
+                        #     # Processing (1) background subtraction
+                        #     if '_channel_confocal.tif' not in renamed_file:
+                        #         imout = image_np.values - bglevel
+                        #         tiff.imwrite(os.path.join(path, folder, bg_files_folder, renamed_file), imout.astype('float32'))
+        
+                            
+                        #     # Processing (3) apply flat field correction mask
+                        #     if len(imout.shape)==2:
+                        #         if imout.shape[0]==imout.shape[1]:
+                        #             # mask = np.repeat(immask_channel[:, :, np.newaxis], imout.shape[2], axis=2)
+                        #             if imout.shape == immask_channel.shape:
+                        #                 imffc = imout / immask_channel
+                        #             else:
+                        #                 resized = cv2.resize(immask_channel, imout.shape, interpolation=cv2.INTER_LINEAR)
+                        #                 imffc = imout / resized
+                        #             tiff.imwrite(os.path.join(path, folder, ffc_files_folder, renamed_file), imffc.astype('float32'))
 
+    break
 

@@ -119,3 +119,12 @@ def intensity_flat_field_mask(n_array, width, height):
     # Resize for non-standart resolution
     im_mask = resize_image(im_mask, width, height)
     return im_mask
+
+def oir_to_tif(oir_file, ij, tif_path):
+    """
+    Convert oir format to tif
+    """
+    dataset = ij.io().open(oir_file)
+    image_np = ij.py.from_java(dataset)
+    image_np = image_np.astype('uint32')
+    tiff.imwrite(tif_path, image_np.astype('uint32'))
