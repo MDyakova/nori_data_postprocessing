@@ -25,7 +25,9 @@ from utilities import (intensity_flat_field_mask,
                        background_substruction, 
                        flat_field_correction, 
                        decomposition,
-                       stiching_combinations)
+                       stiching_combinations,
+                       find_decomp_files,
+                       combine_channels)
 
 # Add path
 os.environ["JAVA_HOME"] = r"C:\Program Files\Eclipse Adoptium\jdk-21.0.8.9-hotspot"
@@ -230,19 +232,12 @@ for folder in folders[3:]:
                         decomp_matrix_save,
                         outputunit)
 
-    # Combine nori images   
+    # Find all nori files for combination  
     all_decomp_files = os.listdir(os.path.join(path, folder, decomp_files_folder))
-    samples = []
-    for file in all_decomp_files:
-        if ('.tif' in file) & ('Zone.Identifier' not in file):
-            sample_name = file.split(file_separator)[0]
-            map_name = file.split(file_separator)[1].split('_')[0]
-            tile_id = int(file.split('_channel')[0].split('_')[-1])
-            samples.append([file, sample_name, map_name, tile_id])
-    samples = pd.DataFrame(samples, columns=('file', 'sample_name', 'map_name', 'tile_id'))
+    samples = find_decomp_files(all_decomp_files,
+                                file_separator)
 
-    # join nori images
-
+    # Combine all files
     for sample_name in pd.unique(samples['sample_name']):
         df_name = samples[samples['sample_name']==sample_name]
         for map_name in pd.unique(df_name['map_name']):
@@ -253,121 +248,81 @@ for folder in folders[3:]:
             all_lipid_images = []
             all_water_images = []
             file_names = []
-            for tile_id in range(1, tiles_number+1):
-                tile_files = list(df_map[df_map['tile_id']==tile_id]['file'])
-                protein_file = list(filter(lambda p: strp in p, tile_files))[0]
-                protein_image = tiff.imread(os.path.join(path, folder, decomp_files_folder, protein_file))
-                all_prot_images.append(protein_image)
-                file_names.append(protein_file)
 
-                lipid_file = list(filter(lambda p: strl in p, tile_files))[0]
-                lipid_image = tiff.imread(os.path.join(path, folder, decomp_files_folder, lipid_file))
-                all_lipid_images.append(lipid_image)
-
-                water_file = list(filter(lambda p: strw in p, tile_files))[0]
-                water_image = tiff.imread(os.path.join(path, folder, decomp_files_folder, water_file))
-                all_water_images.append(water_image)
-            
-                protein_image = protein_image.astype(np.float32, copy=False)
-                lipid_image   = lipid_image.astype(np.float32, copy=False)
-                water_image   = water_image.astype(np.float32, copy=False)
-
-                out_drawing  = os.path.join(path, folder, decomp_files_folder, 'composite', water_file.split('_channel')[0] + '_drawing.tif')
-                out_composite   = os.path.join(path, folder, decomp_files_folder, 'composite', water_file.split('_channel')[0] + '.tif')
+            (protein_file, 
+             protein_image, 
+             lipid_image, 
+             water_image) = combine_channels(df_map, tiles_number, 
+                                            strp, strl, strw, 
+                                            path, folder, decomp_files_folder)
+            file_names.append(protein_file)
+            all_prot_images.append(protein_image)
+            all_lipid_images.append(lipid_image)
+            all_water_images.append(water_image)
                 
-                if not (water_image.shape == protein_image.shape == lipid_image.shape):
-                    raise ValueError(f"Shape mismatch for prefix {prefix} in {decomp_dir}")
-                
-                # Apply "display-range-like" clipping (analogous to setMinAndMax)
-                # Then apply calibration to 0..1000 units (like Calibrate...)
-                MAX_RAW = 8192.0
-                CAL = 1000.0 / MAX_RAW
-                
-                # clip_inplace(protein_image, 0.0, MAX_RAW * protein_coeff)
-                # clip_inplace(lipid_image,   0.0, MAX_RAW * lipid_coeff)
-                # clip_inplace(water_image,   MAX_RAW * water_coeff, MAX_RAW * 1000.0)  # upper bound is effectively huge
-                
-                # # Convert to calibrated units (float32, 0..1000 scale)
-                # protein_image *= CAL
-                # lipid_image   *= CAL
-                # water_image   *= CAL
-                
-                channels = [protein_image, lipid_image, water_image]
-                if len(protein_image.shape)==2:
-                    axes = "CYX" # if 2D
-                else:
-                    axes = "CZYX" # if 3D
-                
-                # Save multi-channel composite as OME-TIFF (C,Z,Y,X), float32, units ~0..1000
-                save_ome_tif(out_composite, channels, axes=axes)
-                # Save RGB drawing (protein→R, lipid→G, water→B)
-                rgb = to_uint8_rgb(protein_image, lipid_image, water_image)  # (Z,Y,X,3)
-                # If multiple Z-slices, write an ImageJ-compatible stack of RGB pages
-                # tifffile will write one page per Z with SamplesPerPixel=3
-                tiff.imwrite(str(out_drawing), rgb, photometric='rgb')
-                
+            # Compute constant shift
             shift = int(protein_image.shape[0]*0.05)
 
-            # find correct grid
-            res = []
-            for comb in poss_comb:
-                # if np.min(comb)>1:
-                cols, rows = comb
-                prev_image = []
-                tile_size = all_prot_images[0].shape
-                tile_size = (3, tile_size[0], tile_size[1])
-                for step, (idx, r, c, next_im) in enumerate(
-                        step_through_images(all_prot_images, cols, rows, start="Right", vertical="Down", pause=False), 1):
-                    # print(f"Step {step:02d}  (row {r}, col {c})  idx={idx}, file_names={file_names[step-1]}")
-                    if len(prev_image)==0:
-                        prev_image = all_prot_images[step-1]
-                        prev_r = r
-                        prev_c = c
-                    else:
-                        new_image = all_prot_images[step-1]
-                        if prev_r==r:
-                            if prev_c<c:
-                                overlap_first = prev_image[:, -shift:]
-                                overlap_second = new_image[:, :shift]
-                                dist = np.corrcoef(overlap_first.reshape(-1), overlap_second.reshape(-1)).min()
-                            else:
-                                overlap_first = prev_image[:, :shift]
-                                overlap_second = new_image[:, -shift:]
-                                dist = np.corrcoef(overlap_first.reshape(-1), overlap_second.reshape(-1)).min()
-                        else:
-                            overlap_first = prev_image[-shift:]
-                            overlap_second = new_image[:shift]
-                            dist = np.corrcoef(overlap_first.reshape(-1), overlap_second.reshape(-1)).min()
+            # # find correct grid
+            # res = []
+            # for comb in poss_comb:
+            #     # if np.min(comb)>1:
+            #     cols, rows = comb
+            #     prev_image = []
+            #     tile_size = all_prot_images[0].shape
+            #     tile_size = (3, tile_size[0], tile_size[1])
+            #     for step, (idx, r, c, next_im) in enumerate(
+            #             step_through_images(all_prot_images, cols, rows, start="Right", vertical="Down", pause=False), 1):
+            #         # print(f"Step {step:02d}  (row {r}, col {c})  idx={idx}, file_names={file_names[step-1]}")
+            #         if len(prev_image)==0:
+            #             prev_image = all_prot_images[step-1]
+            #             prev_r = r
+            #             prev_c = c
+            #         else:
+            #             new_image = all_prot_images[step-1]
+            #             if prev_r==r:
+            #                 if prev_c<c:
+            #                     overlap_first = prev_image[:, -shift:]
+            #                     overlap_second = new_image[:, :shift]
+            #                     dist = np.corrcoef(overlap_first.reshape(-1), overlap_second.reshape(-1)).min()
+            #                 else:
+            #                     overlap_first = prev_image[:, :shift]
+            #                     overlap_second = new_image[:, -shift:]
+            #                     dist = np.corrcoef(overlap_first.reshape(-1), overlap_second.reshape(-1)).min()
+            #             else:
+            #                 overlap_first = prev_image[-shift:]
+            #                 overlap_second = new_image[:shift]
+            #                 dist = np.corrcoef(overlap_first.reshape(-1), overlap_second.reshape(-1)).min()
                 
-                        res.append([comb[0], comb[1], dist, shift])
+            #             res.append([comb[0], comb[1], dist, shift])
                         
-                        new_image = all_prot_images[step-1]
-                        if prev_r==r:
-                            if prev_c<c:
-                                overlap_first = prev_image[:, -shift-1:]
-                                overlap_second = new_image[:, :shift+1]
-                                dist = np.corrcoef(overlap_first.reshape(-1), overlap_second.reshape(-1)).min()
-                            else:
-                                overlap_first = prev_image[:, :shift+1]
-                                overlap_second = new_image[:, -shift-1:]
-                                dist = np.corrcoef(overlap_first.reshape(-1), overlap_second.reshape(-1)).min()
-                        else:
-                            overlap_first = prev_image[-shift-1:]
-                            overlap_second = new_image[:shift+1]
-                            dist = np.corrcoef(overlap_first.reshape(-1), overlap_second.reshape(-1)).min()
+            #             new_image = all_prot_images[step-1]
+            #             if prev_r==r:
+            #                 if prev_c<c:
+            #                     overlap_first = prev_image[:, -shift-1:]
+            #                     overlap_second = new_image[:, :shift+1]
+            #                     dist = np.corrcoef(overlap_first.reshape(-1), overlap_second.reshape(-1)).min()
+            #                 else:
+            #                     overlap_first = prev_image[:, :shift+1]
+            #                     overlap_second = new_image[:, -shift-1:]
+            #                     dist = np.corrcoef(overlap_first.reshape(-1), overlap_second.reshape(-1)).min()
+            #             else:
+            #                 overlap_first = prev_image[-shift-1:]
+            #                 overlap_second = new_image[:shift+1]
+            #                 dist = np.corrcoef(overlap_first.reshape(-1), overlap_second.reshape(-1)).min()
                         
-                        res.append([comb[0], comb[1], dist, shift+1])
+            #             res.append([comb[0], comb[1], dist, shift+1])
                 
-                        prev_image = all_prot_images[step-1]
-                        prev_r = r
-                        prev_c = c
-            res = pd.DataFrame(res, columns=('x', 'y', 'dist', 'shift'))
-            res = res.groupby(by=['x', 'y', 'shift'], as_index=False).mean()
-            res = res.sort_values(by=['dist'], ascending=False).iloc[0:1]
-            x = res['x'].max()
-            y = res['y'].max()  
-            shift = res['shift'].max()
-            print(sample_name, map_name, x, y)
+            #             prev_image = all_prot_images[step-1]
+            #             prev_r = r
+            #             prev_c = c
+            # res = pd.DataFrame(res, columns=('x', 'y', 'dist', 'shift'))
+            # res = res.groupby(by=['x', 'y', 'shift'], as_index=False).mean()
+            # res = res.sort_values(by=['dist'], ascending=False).iloc[0:1]
+            # x = res['x'].max()
+            # y = res['y'].max()  
+            # shift = res['shift'].max()
+            # print(sample_name, map_name, x, y)
             break
     break
 

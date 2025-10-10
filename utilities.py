@@ -157,6 +157,9 @@ def background_substruction(image_np,
                             folder, 
                             bg_files_folder, 
                             renamed_file):
+    """
+    Remove background
+    """
     if '_channel_confocal.tif' not in renamed_file:
         imout = image_np.values - bglevel
         tiff.imwrite(os.path.join(path, folder, bg_files_folder, renamed_file), imout.astype('float32'))
@@ -170,6 +173,9 @@ def flat_field_correction(imout,
                           folder, 
                           ffc_files_folder, 
                           renamed_file):
+    """
+    Make flat field correction
+    """
     if len(imout.shape)==2:
         if imout.shape[0]==imout.shape[1]:
             # if imout.shape == immask_channel.shape:
@@ -197,6 +203,9 @@ def decomposition(water_file, decomp_matrix,
                   normalization_option,
                   decomp_matrix_save,
                   outputunit):
+    """
+    Make NORI images decomposition
+    """
     if 'Zone.Identifier' not in water_file:
         prefix = water_file.split(strw)[0]
         lipid_file = prefix + strl + '.tif'
@@ -261,6 +270,9 @@ def decomposition(water_file, decomp_matrix,
             f.write(f"Tiff image conversion factor is {DECOMP_CONVERSION_FACTOR}.\n")
             
 def stiching_combinations():
+    """
+    Return all possible combinations for nori tiles
+    """
     possible_stitching_combinations = {}
     for n in range(1, 101):
         combos = []
@@ -271,3 +283,110 @@ def stiching_combinations():
         combos_sorted = sorted(combos, key=lambda rc: abs(rc[0] - rc[1]))
         possible_stitching_combinations[n] = combos_sorted
     return possible_stitching_combinations
+
+def find_decomp_files(all_decomp_files,
+                      file_separator):
+    """
+    Return all files for decomposition
+    """
+    samples = []
+    for file in all_decomp_files:
+        if ('.tif' in file) & ('Zone.Identifier' not in file):
+            sample_name = file.split(file_separator)[0]
+            map_name = file.split(file_separator)[1].split('_')[0]
+            tile_id = int(file.split('_channel')[0].split('_')[-1])
+            samples.append([file, sample_name, map_name, tile_id])
+    samples = pd.DataFrame(samples, columns=('file', 'sample_name', 'map_name', 'tile_id'))
+    return samples
+
+def clip_inplace(a, lo, hi):
+    # Clip but avoid NaNs
+    np.clip(a, lo, hi, out=a)
+    return a
+
+def save_ome_tif(path, channels, axes="CZYX"):
+    """
+    channels: list of (Z,Y,X) float32 arrays in calibrated units.
+    Saves as float32 OME-TIFF with given axes.
+    """
+    data = np.stack(channels, axis=0)  # (C,Z,Y,X)
+    metadata = {'axes': axes}
+    tiff.imwrite(
+        str(path),
+        data,
+        dtype=np.float32,
+        photometric='minisblack',
+        metadata=metadata,
+        imagej=False
+    )
+
+def to_uint8_rgb(protein, lipid, water):
+    """
+    Inputs are float (Z,Y,X) in calibrated 0..1000 units after clipping.
+    Convert each to 0..255 and stack as RGB per slice.
+    Returns array (Z, Y, X, 3) uint8.
+    """
+    def scale01(x):
+        # Map 0..1000 → 0..1 (consistent with macro’s calibrated units)
+        y = np.clip(x / 1000.0, 0, 1)
+        return y
+
+    R = (scale01(protein) * 255.0).astype(np.uint8)
+    G = (scale01(lipid)   * 255.0).astype(np.uint8)
+    B = (scale01(water)   * 255.0).astype(np.uint8)
+    return np.stack([R, G, B], axis=-1)
+
+def combine_channels(df_map, tiles_number, 
+                     strp, strl, strw, 
+                     path, folder, decomp_files_folder):
+    """
+    Function combines all channels images together
+    """
+    for tile_id in range(1, tiles_number+1):
+        tile_files = list(df_map[df_map['tile_id']==tile_id]['file'])
+        protein_file = list(filter(lambda p: strp in p, tile_files))[0]
+        protein_image = tiff.imread(os.path.join(path, folder, decomp_files_folder, protein_file))
+        # all_prot_images.append(protein_image)
+        # file_names.append(protein_file)
+
+        lipid_file = list(filter(lambda p: strl in p, tile_files))[0]
+        lipid_image = tiff.imread(os.path.join(path, folder, decomp_files_folder, lipid_file))
+        # all_lipid_images.append(lipid_image)
+
+        water_file = list(filter(lambda p: strw in p, tile_files))[0]
+        water_image = tiff.imread(os.path.join(path, folder, decomp_files_folder, water_file))
+        # all_water_images.append(water_image)
+    
+        protein_image = protein_image.astype(np.float32, copy=False)
+        lipid_image   = lipid_image.astype(np.float32, copy=False)
+        water_image   = water_image.astype(np.float32, copy=False)
+
+        out_drawing  = os.path.join(path, 
+                                    folder, 
+                                    decomp_files_folder, 
+                                    'composite', 
+                                    water_file.split('_channel')[0] + '_drawing.tif')
+        out_composite   = os.path.join(path, 
+                                       folder, 
+                                       decomp_files_folder, 
+                                       'composite', 
+                                       water_file.split('_channel')[0] + '.tif')
+        
+        if not (water_image.shape == protein_image.shape == lipid_image.shape):
+            raise ValueError(f"Shape mismatch for file {protein_file} in {folder}")
+        
+        channels = [protein_image, lipid_image, water_image]
+        if len(protein_image.shape)==2:
+            axes = "CYX" # if 2D
+        else:
+            axes = "CZYX" # if 3D
+        
+        # Save multi-channel composite as OME-TIFF (C,Z,Y,X), float32, units ~0..1000
+        save_ome_tif(out_composite, channels, axes=axes)
+        # Save RGB drawing (protein→R, lipid→G, water→B)
+        rgb = to_uint8_rgb(protein_image, lipid_image, water_image)  # (Z,Y,X,3)
+        # If multiple Z-slices, write an ImageJ-compatible stack of RGB pages
+        # tifffile will write one page per Z with SamplesPerPixel=3
+        tiff.imwrite(str(out_drawing), rgb, photometric='rgb')
+
+    return protein_file, protein_image, lipid_image, water_image
