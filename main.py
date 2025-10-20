@@ -184,10 +184,6 @@ for folder in folders[5:]:
     oir_files = glob.glob(os.path.join(os.path.join(path, folder), 
                                        "**", OIR_EXT), 
                                        recursive=True)
-    # for root, dirs, files in os.walk(os.path.join(path, folder)):
-    #     oir_files = glob.glob(os.path.join(root, "**", OIR_EXT), recursive=True)
-    #     print(oir_files)
-    #     if len(oir_files)>0:
     for oir_file in oir_files:
         if 'Zone.Identifier' not in oir_file:
             file_name = oir_file.split('\\')[-1].split('.oir')[0]
@@ -258,7 +254,6 @@ for folder in folders[5:]:
                                             strp, strl, strw, 
                                             path, folder, decomp_files_folder)
 
-                
             # Compute constant shift
             tile_size = all_prot_images[0].shape
             tile_size = (3, tile_size[0], tile_size[1])
@@ -277,8 +272,6 @@ for folder in folders[5:]:
                             path_stitched,
                             file_separator,
                             tile_size)
-
-
             break
         break
     break
