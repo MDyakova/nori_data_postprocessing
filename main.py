@@ -219,6 +219,8 @@ for folder in folders[5:]:
                                                             folder, 
                                                             ffc_files_folder, 
                                                             renamed_file)
+                else:
+                    pass
 
     # Processing (4) decomposition
     all_flat_files = os.listdir(os.path.join(path, folder, ffc_files_folder))
