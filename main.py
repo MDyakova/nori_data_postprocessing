@@ -180,6 +180,7 @@ for folder in folders[5:]:
     composite_dir = os.path.join(path, folder, decomp_files_folder, 'composite')
     os.makedirs(composite_dir, exist_ok=True)
 
+    all_if_files = []
     # Find all .oir files
     oir_files = glob.glob(os.path.join(os.path.join(path, folder), 
                                        "**", OIR_EXT), 
@@ -191,6 +192,9 @@ for folder in folders[5:]:
                 # Convert oir files to tif
                 tif_path = oir_file.replace('.oir', '.tif')
                 image_np = oir_to_tif(oir_file, ij, tif_path)
+                # check if IF file
+                if '_IF_' in oir_file:
+                    all_if_files.append(oir_file.replace('.oir', '.tif'))
 
                 # Match nori channels
                 if '_NORI_' in file_name:
@@ -219,8 +223,6 @@ for folder in folders[5:]:
                                                             folder, 
                                                             ffc_files_folder, 
                                                             renamed_file)
-                else:
-                    pass
 
     # Processing (4) decomposition
     all_flat_files = os.listdir(os.path.join(path, folder, ffc_files_folder))
@@ -265,7 +267,8 @@ for folder in folders[5:]:
             print(sample_name, map_name, x, y, shift)
 
             # Stitch all tiles to one image
-            tiles_stitching(x, 
+            tiles_stitching(all_if_files,
+                            x, 
                             y, 
                             shift, 
                             path, 
