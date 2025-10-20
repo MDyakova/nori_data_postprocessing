@@ -342,6 +342,10 @@ def combine_channels(df_map, tiles_number,
     """
     Function combines all channels images together
     """
+    all_prot_images = []
+    all_lipid_images = []
+    all_water_images = []
+    file_names = []
     for tile_id in range(1, tiles_number+1):
         tile_files = list(df_map[df_map['tile_id']==tile_id]['file'])
         protein_file = list(filter(lambda p: strp in p, tile_files))[0]
@@ -360,6 +364,11 @@ def combine_channels(df_map, tiles_number,
         protein_image = protein_image.astype(np.float32, copy=False)
         lipid_image   = lipid_image.astype(np.float32, copy=False)
         water_image   = water_image.astype(np.float32, copy=False)
+
+        file_names.append(protein_file)
+        all_prot_images.append(protein_image)
+        all_lipid_images.append(lipid_image)
+        all_water_images.append(water_image)
 
         out_drawing  = os.path.join(path, 
                                     folder, 
@@ -389,7 +398,7 @@ def combine_channels(df_map, tiles_number,
         # tifffile will write one page per Z with SamplesPerPixel=3
         tiff.imwrite(str(out_drawing), rgb, photometric='rgb')
 
-    return protein_file, protein_image, lipid_image, water_image
+    return file_names, all_prot_images, all_lipid_images, all_water_images
 
 def snake_by_rows_indices(n_cols: int, n_rows: int,
                           start: str = "Right", vertical: str = "Down") -> List[int]:

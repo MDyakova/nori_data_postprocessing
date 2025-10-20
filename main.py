@@ -179,46 +179,49 @@ for folder in folders[4:]:
     composite_dir = os.path.join(path, folder, decomp_files_folder, 'composite')
     os.makedirs(composite_dir, exist_ok=True)
 
-    for root, dirs, files in os.walk(os.path.join(path, folder)):
-        oir_files = glob.glob(os.path.join(root, "**", OIR_EXT), recursive=True)
-        if len(oir_files)>0:
-            for oir_file in oir_files:
-                if 'Zone.Identifier' not in oir_file:
-                    file_name = oir_file.split('\\')[-1].split('.oir')[0]
-                    if file_name[:3]!='Map':
-                        # Convert oir files to tif
-                        tif_path = oir_file.replace('.oir', '.tif')
-                        is_file_exist = os.path.exists(tif_path)
-                        # if (overwrite_files) | (not is_file_exist):
-                        image_np = oir_to_tif(oir_file, ij, tif_path)
-    
-                        # Match nori channels
-                        if '_NORI_' in file_name:
-                            immask_channel, renamed_file = match_channels(image_np, 
-                                                                            oir_file, 
-                                                                            file_name, 
-                                                                            masks, 
-                                                                            path, 
-                                                                            folder, 
-                                                                            rename_files_folder)
-                        
-                            # Processing (1) background subtraction
-                            if immask_channel is not None:
-                                imout = background_substruction(image_np, 
-                                                                bglevel, 
-                                                                path, 
-                                                                folder, 
-                                                                bg_files_folder, 
-                                                                renamed_file)
-                                      
-                                if imout is not None:
-                                    # Processing (3) apply flat field correction mask
-                                    imffc = flat_field_correction(imout,
-                                                                    immask_channel, 
+    # Find all .oir files
+    oir_files = glob.glob(os.path.join(os.path.join(path, folder), 
+                                       "**", OIR_EXT), 
+                                       recursive=True)
+    # for root, dirs, files in os.walk(os.path.join(path, folder)):
+    #     oir_files = glob.glob(os.path.join(root, "**", OIR_EXT), recursive=True)
+    #     print(oir_files)
+    #     if len(oir_files)>0:
+    for oir_file in oir_files:
+        if 'Zone.Identifier' not in oir_file:
+            file_name = oir_file.split('\\')[-1].split('.oir')[0]
+            if file_name[:3]!='Map':
+                # Convert oir files to tif
+                tif_path = oir_file.replace('.oir', '.tif')
+                image_np = oir_to_tif(oir_file, ij, tif_path)
+
+                # Match nori channels
+                if '_NORI_' in file_name:
+                    immask_channel, renamed_file = match_channels(image_np, 
+                                                                    oir_file, 
+                                                                    file_name, 
+                                                                    masks, 
                                                                     path, 
                                                                     folder, 
-                                                                    ffc_files_folder, 
-                                                                    renamed_file)
+                                                                    rename_files_folder)
+                
+                    # Processing (1) background subtraction
+                    if immask_channel is not None:
+                        imout = background_substruction(image_np, 
+                                                        bglevel, 
+                                                        path, 
+                                                        folder, 
+                                                        bg_files_folder, 
+                                                        renamed_file)
+                                
+                        if imout is not None:
+                            # Processing (3) apply flat field correction mask
+                            imffc = flat_field_correction(imout,
+                                                            immask_channel, 
+                                                            path, 
+                                                            folder, 
+                                                            ffc_files_folder, 
+                                                            renamed_file)
 
     # Processing (4) decomposition
     all_flat_files = os.listdir(os.path.join(path, folder, ffc_files_folder))
@@ -245,29 +248,24 @@ for folder in folders[4:]:
             df_map = df_name[df_name['map_name']==map_name]
             tiles_number = df_map['tile_id'].max()
             poss_comb = possible_stitching_combinations[tiles_number]
-            all_prot_images = []
-            all_lipid_images = []
-            all_water_images = []
-            file_names = []
 
-            (protein_file, 
-             protein_image, 
-             lipid_image, 
-             water_image) = combine_channels(df_map, tiles_number, 
+
+            (file_names, 
+             all_prot_images, 
+             all_lipid_images, 
+             all_water_images) = combine_channels(df_map, tiles_number, 
                                             strp, strl, strw, 
                                             path, folder, decomp_files_folder)
-            file_names.append(protein_file)
-            all_prot_images.append(protein_image)
-            all_lipid_images.append(lipid_image)
-            all_water_images.append(water_image)
+
                 
             # Compute constant shift
-            shift = int(protein_image.shape[0]*0.05)
+            shift = int(all_prot_images[0].shape[0]*0.05)
 
             x, y, shift = find_stiching_map(all_prot_images, poss_comb, shift)
             print(sample_name, x, y, shift)
 
 
             break
+        break
     break
 
