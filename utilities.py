@@ -494,3 +494,135 @@ def find_stiching_map(all_prot_images, poss_comb, shift):
     y = res['y'].max()  
     shift = res['shift'].max()
     return x, y, shift
+
+import numpy as np
+import cv2
+
+def blend_distance_feather(img1, img2, mask1=None, mask2=None, eps=1e-6, power=1.0):
+    """
+    Realistic feathering using distance transforms.
+    - Weights increase with distance from each tile's boundary.
+    - 'power' > 1 sharpens the transition; < 1 softens it.
+
+    img1, img2: HxW or HxWxC, same dtype/shape.
+    mask1, mask2: uint8/bool masks of valid data (1/True where valid). If None, uses >0.
+
+    Returns: blended image (same dtype).
+    """
+    f32 = np.float32
+    a = np.asarray(img1, dtype=f32)
+    b = np.asarray(img2, dtype=f32)
+    H, W = a.shape[:2]
+
+    if mask1 is None:
+        mask1 = (a > 0).any(axis=-1) if a.ndim == 3 else (a > 0)
+    if mask2 is None:
+        mask2 = (b > 0).any(axis=-1) if b.ndim == 3 else (b > 0)
+
+    # Distance to the nearest zero (edge) *inside* the valid region
+    d1 = cv2.distanceTransform((mask1.astype(np.uint8))*255, cv2.DIST_L2, 3)
+    d2 = cv2.distanceTransform((mask2.astype(np.uint8))*255, cv2.DIST_L2, 3)
+
+    # Only consider places where at least one image is valid
+    union = (mask1 | mask2)
+    d1 = d1 ** power
+    d2 = d2 ** power
+    w1 = d1 / (d1 + d2 + eps)
+    w2 = 1.0 - w1
+
+    # Where only one is valid, make that weight 1
+    w1[mask1 & ~mask2] = 1.0
+    w2[mask1 & ~mask2] = 0.0
+    w1[~mask1 & mask2] = 0.0
+    w2[~mask1 & mask2] = 1.0
+    w1[~union] = 0.0
+    w2[~union] = 0.0
+
+    if a.ndim == 3:
+        w1 = w1[..., None]; w2 = w2[..., None]
+
+    out = a * w1 + b * w2
+    return out.astype(img1.dtype)
+
+def tiles_stitching(x, 
+                    y, 
+                    shift, 
+                    path, 
+                    folder, 
+                    decomp_files_folder, 
+                    path_stitched, 
+                    file_separator,
+                    tile_size):
+    """
+    Stitch all tiles to one image
+    """
+    max_x = x
+    max_y = y
+
+    coords_dict = {}
+    for j in range(y):
+        for i in range(x):
+            if (i==0) & (j==0):
+                coords_dict[(j, i)] = [0, 0]
+                prev_x = i
+                prev_y = j
+            else:
+                if i==0:
+                    shift_x = 0
+                    shift_y = tile_size[1] - shift
+                else:
+                    shift_x = tile_size[2] - shift
+                    shift_y = 0 
+                prev_coords = coords_dict[(prev_y, prev_x)]
+                new_coord = [int(prev_coords[0]+shift_y), int(prev_coords[1]+shift_x)]
+                coords_dict[(j, i)] = new_coord
+                prev_x = i
+                prev_y = j
+
+                if prev_x==(max_x-1):
+                    prev_y = j
+                    prev_x = 0               
+
+    shape_x = np.array(list(coords_dict.values())).T[1].max() + tile_size[2]
+    shape_y = np.array(list(coords_dict.values())).T[0].max() + tile_size[1]
+
+    composite_dir = os.path.join(path, folder, decomp_files_folder, 'composite')
+    composite_files = os.listdir(composite_dir)
+    composite_files = list(filter(lambda p: ('_drawing' not in p) & ('.tif' in p), composite_files))
+
+    samples = []
+    for file in composite_files:
+        if '.tif' in file:
+            sample_name = file.split(file_separator)[0]
+            map_name = file.split(file_separator)[1].split('_')[0]
+            tile_id = int(file.split('.tif')[0].split('_')[-1])
+            samples.append([file, sample_name, map_name, tile_id])
+    samples = pd.DataFrame(samples, columns=('file', 'sample_name', 'map_name', 'tile_id'))
+
+    df_name = samples[samples['sample_name']==sample_name]
+    df_map = df_name[df_name['map_name']==map_name]
+    tiles_number = df_map['tile_id'].max()
+
+    all_tile_files = []
+    file_names = []
+    for tile_id in range(1, tiles_number+1):
+        tile_file = list(df_map[df_map['tile_id']==tile_id]['file'])[0]
+        tile_image = tiff.imread(os.path.join(composite_dir, tile_file))
+        all_tile_files.append(tile_image)
+        file_names.append(tile_file)
+
+    tile_size = all_tile_files[0].shape
+    cols, rows = x, y
+    new_image = np.zeros((tile_size[0], shape_y, shape_x))
+    for step, (idx, r, c, next_im) in enumerate(
+            step_through_images(all_tile_files, cols, rows, start="Right", vertical="Down", pause=False), 1):
+        next_im = all_tile_files[step-1]
+        coords = coords_dict[(r, c)]
+        image_crop = new_image[:, coords[0]:coords[0]+tile_size[1], coords[1]:coords[1]+tile_size[2]].copy()
+        new_image_mask = np.zeros((shape_y, shape_x))
+
+        for layer in range(tile_size[0]):
+            new_image_mask[coords[0]:coords[0]+tile_size[1], coords[1]:coords[1]+tile_size[2]] = next_im[layer]
+            new_image[layer] = blend_distance_feather(new_image[layer], new_image_mask, eps=1e-6, power=0.5)
+    out_stitched  = os.path.join(path_stitched, sample_name + '_MAP' + map_name + '.tif')
+    tiff.imwrite(out_stitched, new_image.astype('float32'))

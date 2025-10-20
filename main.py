@@ -28,7 +28,8 @@ from utilities import (intensity_flat_field_mask,
                        stiching_combinations,
                        find_decomp_files,
                        combine_channels,
-                       find_stiching_map)
+                       find_stiching_map,
+                       tiles_stitching)
 
 # Add path
 os.environ["JAVA_HOME"] = r"C:\Program Files\Eclipse Adoptium\jdk-21.0.8.9-hotspot"
@@ -68,6 +69,7 @@ KEEP_SEPARATE_CHANNELS = False
 mount_cmd = f'net use {drive_letter} {network_path}'
 os.system(mount_cmd)
 path = os.path.join(drive_letter + data_folder)
+path_stitched = os.path.join(drive_letter + stitched_files_folder)
 
 # Get folders list
 folders = os.listdir(path)
@@ -168,14 +170,13 @@ for size in [256, 512, 640, 800, 1024, 2048, 4096]:
 possible_stitching_combinations = stiching_combinations()
 
 # Process all nori files inside data directory
-for folder in folders[4:]:
+for folder in folders[5:]:
     print(folder)
     # Folders for outputs
     os.makedirs(os.path.join(path, folder, rename_files_folder), exist_ok=True)
     os.makedirs(os.path.join(path, folder, bg_files_folder), exist_ok=True)
     os.makedirs(os.path.join(path, folder, ffc_files_folder), exist_ok=True)
     os.makedirs(os.path.join(path, folder, decomp_files_folder), exist_ok=True)
-    os.makedirs(os.path.join(path, folder, stitched_files_folder), exist_ok=True)
     composite_dir = os.path.join(path, folder, decomp_files_folder, 'composite')
     os.makedirs(composite_dir, exist_ok=True)
 
@@ -259,10 +260,23 @@ for folder in folders[4:]:
 
                 
             # Compute constant shift
-            shift = int(all_prot_images[0].shape[0]*0.05)
+            tile_size = all_prot_images[0].shape
+            tile_size = (3, tile_size[0], tile_size[1])
+            shift = int(tile_size[1]*0.05)
 
             x, y, shift = find_stiching_map(all_prot_images, poss_comb, shift)
-            print(sample_name, x, y, shift)
+            print(sample_name, map_name, x, y, shift)
+
+            # Stitch all tiles to one image
+            tiles_stitching(x, 
+                            y, 
+                            shift, 
+                            path, 
+                            folder, 
+                            decomp_files_folder,
+                            path_stitched,
+                            file_separator,
+                            tile_size)
 
 
             break
