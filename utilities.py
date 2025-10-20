@@ -390,3 +390,98 @@ def combine_channels(df_map, tiles_number,
         tiff.imwrite(str(out_drawing), rgb, photometric='rgb')
 
     return protein_file, protein_image, lipid_image, water_image
+
+def snake_by_rows_indices(n_cols: int, n_rows: int,
+                          start: str = "Right", vertical: str = "Down") -> List[int]:
+    """Return flat indices (row-major) in snake-by-rows order."""
+    if start not in {"Right", "Left"} or vertical not in {"Down", "Up"}:
+        raise ValueError("start must be 'Right' or 'Left'; vertical must be 'Down' or 'Up'.")
+
+    row_iter = range(n_rows) if vertical == "Down" else range(n_rows - 1, -1, -1)
+    order: List[int] = []
+
+    for i, r in enumerate(row_iter):
+        left_to_right = (i % 2 == 0) if start == "Right" else (i % 2 == 1)
+        col_iter = range(n_cols) if left_to_right else range(n_cols - 1, -1, -1)
+        for c in col_iter:
+            order.append(r * n_cols + c)
+    return order
+
+def step_through_images(files: List[str], n_cols: int, n_rows: int,
+                        start: str = "Right", vertical: str = "Down",
+                        pause: bool = False) -> Iterator[Tuple[int, int, int, str]]:
+    """
+    Yield (flat_idx, row, col, path) for each image in the specified order.
+    Set pause=True to wait for Enter between steps.
+    """
+    if len(files) != n_cols * n_rows:
+        raise ValueError(f"Expected {n_cols*n_rows} files, got {len(files)}.")
+
+    order = snake_by_rows_indices(n_cols, n_rows, start, vertical)
+    for idx in order:
+        r, c = divmod(idx, n_cols)
+        yield idx, r, c, files[idx]
+        if pause:
+            input("Press Enter for next...")
+
+def find_stiching_map(all_prot_images, poss_comb, shift):
+    """
+    Check possible stiching combination and find the best parameters
+    """
+    res = []
+    for comb in poss_comb:
+        cols, rows = comb
+        prev_image = []
+        tile_size = all_prot_images[0].shape
+        tile_size = (3, tile_size[0], tile_size[1])
+        for step, (idx, r, c, next_im) in enumerate(
+                step_through_images(all_prot_images, cols, rows, start="Right", vertical="Down", pause=False), 1):
+            if len(prev_image)==0:
+                prev_image = all_prot_images[step-1]
+                prev_r = r
+                prev_c = c
+            else:
+                new_image = all_prot_images[step-1]
+                if prev_r==r:
+                    if prev_c<c:
+                        overlap_first = prev_image[:, -shift:]
+                        overlap_second = new_image[:, :shift]
+                        dist = np.corrcoef(overlap_first.reshape(-1), overlap_second.reshape(-1)).min()
+                    else:
+                        overlap_first = prev_image[:, :shift]
+                        overlap_second = new_image[:, -shift:]
+                        dist = np.corrcoef(overlap_first.reshape(-1), overlap_second.reshape(-1)).min()
+                else:
+                    overlap_first = prev_image[-shift:]
+                    overlap_second = new_image[:shift]
+                    dist = np.corrcoef(overlap_first.reshape(-1), overlap_second.reshape(-1)).min()
+        
+                res.append([comb[0], comb[1], dist, shift])
+                
+                new_image = all_prot_images[step-1]
+                if prev_r==r:
+                    if prev_c<c:
+                        overlap_first = prev_image[:, -shift-1:]
+                        overlap_second = new_image[:, :shift+1]
+                        dist = np.corrcoef(overlap_first.reshape(-1), overlap_second.reshape(-1)).min()
+                    else:
+                        overlap_first = prev_image[:, :shift+1]
+                        overlap_second = new_image[:, -shift-1:]
+                        dist = np.corrcoef(overlap_first.reshape(-1), overlap_second.reshape(-1)).min()
+                else:
+                    overlap_first = prev_image[-shift-1:]
+                    overlap_second = new_image[:shift+1]
+                    dist = np.corrcoef(overlap_first.reshape(-1), overlap_second.reshape(-1)).min()
+                
+                res.append([comb[0], comb[1], dist, shift+1])
+        
+                prev_image = all_prot_images[step-1]
+                prev_r = r
+                prev_c = c
+    res = pd.DataFrame(res, columns=('x', 'y', 'dist', 'shift'))
+    res = res.groupby(by=['x', 'y', 'shift'], as_index=False).mean()
+    res = res.sort_values(by=['dist'], ascending=False).iloc[0:1]
+    x = res['x'].max()
+    y = res['y'].max()  
+    shift = res['shift'].max()
+    return x, y, shift

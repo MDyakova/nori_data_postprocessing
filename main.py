@@ -27,7 +27,8 @@ from utilities import (intensity_flat_field_mask,
                        decomposition,
                        stiching_combinations,
                        find_decomp_files,
-                       combine_channels)
+                       combine_channels,
+                       find_stiching_map)
 
 # Add path
 os.environ["JAVA_HOME"] = r"C:\Program Files\Eclipse Adoptium\jdk-21.0.8.9-hotspot"
@@ -167,7 +168,7 @@ for size in [256, 512, 640, 800, 1024, 2048, 4096]:
 possible_stitching_combinations = stiching_combinations()
 
 # Process all nori files inside data directory
-for folder in folders[3:]:
+for folder in folders[4:]:
     print(folder)
     # Folders for outputs
     os.makedirs(os.path.join(path, folder, rename_files_folder), exist_ok=True)
@@ -263,66 +264,10 @@ for folder in folders[3:]:
             # Compute constant shift
             shift = int(protein_image.shape[0]*0.05)
 
-            # # find correct grid
-            # res = []
-            # for comb in poss_comb:
-            #     # if np.min(comb)>1:
-            #     cols, rows = comb
-            #     prev_image = []
-            #     tile_size = all_prot_images[0].shape
-            #     tile_size = (3, tile_size[0], tile_size[1])
-            #     for step, (idx, r, c, next_im) in enumerate(
-            #             step_through_images(all_prot_images, cols, rows, start="Right", vertical="Down", pause=False), 1):
-            #         # print(f"Step {step:02d}  (row {r}, col {c})  idx={idx}, file_names={file_names[step-1]}")
-            #         if len(prev_image)==0:
-            #             prev_image = all_prot_images[step-1]
-            #             prev_r = r
-            #             prev_c = c
-            #         else:
-            #             new_image = all_prot_images[step-1]
-            #             if prev_r==r:
-            #                 if prev_c<c:
-            #                     overlap_first = prev_image[:, -shift:]
-            #                     overlap_second = new_image[:, :shift]
-            #                     dist = np.corrcoef(overlap_first.reshape(-1), overlap_second.reshape(-1)).min()
-            #                 else:
-            #                     overlap_first = prev_image[:, :shift]
-            #                     overlap_second = new_image[:, -shift:]
-            #                     dist = np.corrcoef(overlap_first.reshape(-1), overlap_second.reshape(-1)).min()
-            #             else:
-            #                 overlap_first = prev_image[-shift:]
-            #                 overlap_second = new_image[:shift]
-            #                 dist = np.corrcoef(overlap_first.reshape(-1), overlap_second.reshape(-1)).min()
-                
-            #             res.append([comb[0], comb[1], dist, shift])
-                        
-            #             new_image = all_prot_images[step-1]
-            #             if prev_r==r:
-            #                 if prev_c<c:
-            #                     overlap_first = prev_image[:, -shift-1:]
-            #                     overlap_second = new_image[:, :shift+1]
-            #                     dist = np.corrcoef(overlap_first.reshape(-1), overlap_second.reshape(-1)).min()
-            #                 else:
-            #                     overlap_first = prev_image[:, :shift+1]
-            #                     overlap_second = new_image[:, -shift-1:]
-            #                     dist = np.corrcoef(overlap_first.reshape(-1), overlap_second.reshape(-1)).min()
-            #             else:
-            #                 overlap_first = prev_image[-shift-1:]
-            #                 overlap_second = new_image[:shift+1]
-            #                 dist = np.corrcoef(overlap_first.reshape(-1), overlap_second.reshape(-1)).min()
-                        
-            #             res.append([comb[0], comb[1], dist, shift+1])
-                
-            #             prev_image = all_prot_images[step-1]
-            #             prev_r = r
-            #             prev_c = c
-            # res = pd.DataFrame(res, columns=('x', 'y', 'dist', 'shift'))
-            # res = res.groupby(by=['x', 'y', 'shift'], as_index=False).mean()
-            # res = res.sort_values(by=['dist'], ascending=False).iloc[0:1]
-            # x = res['x'].max()
-            # y = res['y'].max()  
-            # shift = res['shift'].max()
-            # print(sample_name, map_name, x, y)
+            x, y, shift = find_stiching_map(all_prot_images, poss_comb, shift)
+            print(sample_name, x, y, shift)
+
+
             break
     break
 
