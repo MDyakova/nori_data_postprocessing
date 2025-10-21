@@ -39,15 +39,15 @@ os.environ["PATH"] = os.environ["JAVA_HOME"] + r"\bin;" + os.environ["PATH"]
 ij = imagej.init('sc.fiji:fiji', mode="headless")
 
 # input parameters
-data_folder = r"\NoRI\Masha\20250903 Ageing Atlas 21mo"
+data_folder = r"\NoRI\Masha\20241120 Ageing Atlas 9mo"
 stitched_files_folder = r"\NoRI\Masha\Stitched"
 powersetting='UP'
-merge_order = ["NORI_c1", "NORI_c2", "NORI_c3"]#, "IF_c1", "IF_c2", "IF_c3", "IF_c4"]
+# merge_order = ["NORI_c1", "NORI_c2", "NORI_c3"]#, "IF_c1", "IF_c2", "IF_c3", "IF_c4"]
 file_separator = '_MAP'
 overwrite_files = False
 drive_letter = "Z:"
 network_path = r"\\research.files.med.harvard.edu\Sysbio"
-calibration_folder = os.path.join(drive_letter + r"\NoRI\Calibration Archive\20250903 calibration")
+calibration_folder = os.path.join(drive_letter + r"\NoRI\Calibration Archive\20241120 calibration")
 
 
 # Dependent varibles
@@ -170,7 +170,7 @@ for size in [256, 512, 640, 800, 1024, 2048, 4096]:
 possible_stitching_combinations = stiching_combinations()
 
 # Process all nori files inside data directory
-for folder in folders[5:]:
+for folder in folders[0:]:
     print(folder)
     # Folders for outputs
     os.makedirs(os.path.join(path, folder, rename_files_folder), exist_ok=True)

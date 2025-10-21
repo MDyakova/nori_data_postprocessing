@@ -620,11 +620,11 @@ def tiles_stitching(all_if_files,
     tile_size = all_tile_files[0].shape
     cols, rows = x, y
     new_image = np.zeros((tile_size[0], shape_y, shape_x))
-    for step, (idx, r, c, next_im) in enumerate(
+    for step, (_, r, c, next_im) in enumerate(
             step_through_images(all_tile_files, cols, rows, start="Right", vertical="Down", pause=False), 1):
         next_im = all_tile_files[step-1]
         coords = coords_dict[(r, c)]
-        image_crop = new_image[:, coords[0]:coords[0]+tile_size[1], coords[1]:coords[1]+tile_size[2]].copy()
+        # image_crop = new_image[:, coords[0]:coords[0]+tile_size[1], coords[1]:coords[1]+tile_size[2]].copy()
         new_image_mask = np.zeros((shape_y, shape_x))
 
         for layer in range(tile_size[0]):
@@ -633,55 +633,62 @@ def tiles_stitching(all_if_files,
     out_stitched  = os.path.join(path_stitched, sample_name + '_MAP' + map_name + '.tif')
 
     # Fluorescent files stitching
-    samples_if = []
-    for file in all_if_files:
-        if '.tif' in file:
-            path_if = '\\'.join(file.split('\\')[:-1])
-            file_name = file.split('\\')[-1]
-            sample_name = file_name.split(file_separator)[0]
-            map_name = file_name.split(file_separator)[1].split('_')[0]
-            tile_id = int(file_name.split('.tif')[0].split('_')[-1])
-            samples_if.append([file, file_name, sample_name, map_name, tile_id])
-    samples_if = pd.DataFrame(samples_if, columns=('file', 'file_name', 'sample_name', 'map_name', 'tile_id'))
+    if len(all_if_files)>0:
+        samples_if = []
+        for file in all_if_files:
+            if '.tif' in file:
+                # path_if = '\\'.join(file.split('\\')[:-1])
+                file_name = file.split('\\')[-1]
+                sample_name = file_name.split(file_separator)[0]
+                map_name = file_name.split(file_separator)[1].split('_')[0]
+                tile_id = int(file_name.split('.tif')[0].split('_')[-1])
+                samples_if.append([file, file_name, sample_name, map_name, tile_id])
+        samples_if = pd.DataFrame(samples_if, columns=('file', 'file_name', 'sample_name', 'map_name', 'tile_id'))
 
-    df_name = samples_if[samples_if['sample_name']==sample_name]
-    df_map = df_name[df_name['map_name']==map_name]
-    tiles_number = df_map['tile_id'].max()
+        df_name = samples_if[samples_if['sample_name']==sample_name]
+        df_map = df_name[df_name['map_name']==map_name]
+        print(df_map['tile_id'].max())
+        tiles_number = int(df_map['tile_id'].max())
 
-    all_tile_if_files = []
-    file_names_if = []
-    for tile_id in range(1, tiles_number+1):
-        tile_file = list(df_map[df_map['tile_id']==tile_id]['file'])[0]
-        tile_image = tiff.imread(tile_file)
-        all_tile_if_files.append(tile_image)
-        file_names_if.append(tile_file)
+        all_tile_if_files = []
+        file_names_if = []
+        for tile_id in range(1, tiles_number+1):
+            tile_file = list(df_map[df_map['tile_id']==tile_id]['file'])[0]
+            tile_image = tiff.imread(tile_file)
+            all_tile_if_files.append(tile_image)
+            file_names_if.append(tile_file)
 
-    new_image_if = np.zeros((all_tile_if_files[0].shape[2], shape_y, shape_x))
-    for step, (idx, r, c, next_im) in enumerate(
-            step_through_images(all_tile_if_files, cols, rows, start="Right", vertical="Down", pause=False), 1):
-        next_im = all_tile_if_files[step-1]
-        coords = coords_dict[(r, c)]
-        image_crop = new_image_if[:, coords[0]:coords[0]+tile_size[1], coords[1]:coords[1]+tile_size[2]].copy()
-        new_image_mask_if = np.zeros((shape_y, shape_x))
+        new_image_if = np.zeros((all_tile_if_files[0].shape[2], shape_y, shape_x))
+        for step, (_, r, c, next_im) in enumerate(
+                step_through_images(all_tile_if_files, cols, rows, start="Right", vertical="Down", pause=False), 1):
+            next_im = all_tile_if_files[step-1]
+            coords = coords_dict[(r, c)]
+            # image_crop = new_image_if[:, coords[0]:coords[0]+tile_size[1], coords[1]:coords[1]+tile_size[2]].copy()
+            new_image_mask_if = np.zeros((shape_y, shape_x))
 
-        for layer in range(all_tile_if_files[0].shape[2]):
-            new_image_mask_if[coords[0]:coords[0]+tile_size[1], coords[1]:coords[1]+tile_size[2]] = next_im[:, :, layer]
-            new_image_if[layer] = blend_distance_feather(new_image_if[layer], new_image_mask_if, eps=1e-6, power=0.5)
+            for layer in range(all_tile_if_files[0].shape[2]):
+                new_image_mask_if[coords[0]:coords[0]+tile_size[1], coords[1]:coords[1]+tile_size[2]] = next_im[:, :, layer]
+                new_image_if[layer] = blend_distance_feather(new_image_if[layer], new_image_mask_if, eps=1e-6, power=0.5)
 
-    # Correct flourescence shift
-    f_shift = fluorescence_shift_dict[tile_size[1]]
-    shifted_images = []
-    for layer in range(new_image_if.shape[0]):
-        b_aligned = imshift(new_image_if[layer], shift=f_shift, order=1, mode='constant', cval=0.0)
-        shifted_images.append(b_aligned)
-    all_images = np.concatenate([new_image, shifted_images], axis=0)
-    # tiff.imwrite(out_stitched, all_images.astype('float32'))
-    # Save as ImageJ-compatible multi-channel TIFF
-    tiff.imwrite(
-        out_stitched,
-        all_images,
-        imagej=True,
-        metadata={'axes': 'CYX'}   # tell ImageJ axes order
-    )
-
-
+        # Correct flourescence shift
+        f_shift = fluorescence_shift_dict[tile_size[1]]
+        shifted_images = []
+        for layer in range(new_image_if.shape[0]):
+            b_aligned = imshift(new_image_if[layer], shift=f_shift, order=1, mode='constant', cval=0.0)
+            shifted_images.append(b_aligned)
+        all_images = np.concatenate([new_image, shifted_images], axis=0)
+        # Save as ImageJ-compatible multi-channel NORI + IF TIFF
+        tiff.imwrite(
+            out_stitched,
+            all_images.astype('float32'),
+            imagej=True,
+            metadata={'axes': 'CYX'} 
+        )
+    else:
+        # Save as ImageJ-compatible multi-channel NORI TIFF
+        tiff.imwrite(
+            out_stitched,
+            new_image.astype('float32'),
+            imagej=True,
+            metadata={'axes': 'CYX'}
+        ) 
