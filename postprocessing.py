@@ -49,7 +49,6 @@ drive_letter = "Z:"
 network_path = r"\\research.files.med.harvard.edu\Sysbio"
 calibration_folder = os.path.join(drive_letter + r"\NoRI\Calibration Archive\20241120 calibration")
 
-
 # Dependent varibles
 rename_files_folder = 'signalX_test'
 bg_files_folder = 'signal_bg_test'

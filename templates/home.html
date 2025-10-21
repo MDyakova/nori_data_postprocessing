@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NoRI Tool • Configuration</title>
+  <style>
+    :root{
+      --bg:#0b1020; --panel:#0f1730; --ink:#c9d6ff; --muted:#8aa0c8; --accent:#6ad1ff; --ok:#3ddc97; --danger:#ff6b6b;
+      --mono:ui-monospace,Menlo,Consolas; --sans:Inter,system-ui,Roboto,Helvetica,Arial; --radius:16px;
+    }
+    body{background:linear-gradient(180deg,#0a0f1e,#070b16);color:var(--ink);font-family:var(--sans);margin:0;}
+    header{max-width:900px;margin:40px auto;padding:0 20px}
+    h1{margin:0;font-size:28px;}
+    .subtitle{color:var(--muted);margin-top:6px}
+    main{max-width:900px;margin:20px auto;padding:0 20px}
+    .panel{background:#0f1730;border-radius:var(--radius);padding:24px;box-shadow:0 0 20px rgba(0,0,0,.3)}
+    form{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}
+    .field{grid-column:span 6;display:flex;flex-direction:column}
+    .field.full{grid-column:span 12}
+    label{font-size:12px;text-transform:uppercase;color:var(--muted);letter-spacing:.05em}
+    input[type=text],select{background:#0a1125;border:1px solid #1c2747;border-radius:12px;padding:10px 12px;color:var(--ink);font-family:var(--mono)}
+    button{border:none;border-radius:12px;padding:12px 16px;cursor:pointer;font-weight:600}
+    .primary{background:var(--accent);color:#06121c}
+    .ghost{background:transparent;color:var(--ink);border:1px solid #22305a}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>NoRI Tool • Configuration</h1>
+    <div class="subtitle">Modern interface for scientific pipelines</div>
+  </header>
+  <main>
+    <div class="panel">
+      <form id="config-form">
+        <!-- 1. Drive letter -->
+        <div class="field full">
+          <label for="drive_letter">Drive Letter</label>
+          <select id="drive_letter" name="drive_letter"></select>
+        </div>
+        <!-- 2. Data folder -->
+        <div class="field full">
+          <label for="data_folder">Data Folder</label>
+          <input type="text" id="data_folder" name="data_folder" value="{{ defaults.data_folder }}">
+        </div>
+        <!-- 3. Stitched files folder -->
+        <div class="field full">
+          <label for="stitched_files_folder">Stitched Files Folder</label>
+          <input type="text" id="stitched_files_folder" name="stitched_files_folder" value="{{ defaults.stitched_files_folder }}">
+        </div>
+        <!-- 4. Calibration directory -->
+        <div class="field full">
+          <label for="calibration_directories">Calibration Directories</label>
+          <input type="text" id="calibration_directories" name="calibration_directories" value="{{ defaults.calibration_directories }}">
+        </div>
+        <!-- 5. Calibration folder -->
+        <div class="field full">
+          <label for="calibration_folder">Calibration Folder</label>
+          <select id="calibration_folder" name="calibration_folder"></select>
+        </div>
+        <!-- Data subfolders checkboxes -->
+        <div class="field full">
+          <label>Data Subfolders (select for postprocess)</label>
+          <div id="folder-checkboxes" style="display:flex;flex-wrap:wrap;gap:10px;padding:8px 0;"></div>
+          <button class="ghost" type="button" id="refresh-folders">Refresh Folder List</button>
+        </div>
+        <!-- 6. File separator + power setting -->
+        <div class="field">
+          <label for="file_separator">File Separator</label>
+          <input type="text" id="file_separator" name="file_separator" value="{{ defaults.file_separator }}">
+        </div>
+        <div class="field">
+          <label for="powersetting">Power Setting</label>
+          <input type="text" id="powersetting" name="powersetting" value="{{ defaults.powersetting }}">
+        </div>
+        <div class="field full">
+          <button class="primary" type="submit">Save Configuration</button>
+          <button class="ghost" type="button" id="refresh-cal">Refresh Calibration List</button>
+        </div>
+      </form>
+    </div>
+  </main>
+  <script>
+    async function fetchJSON(url){const r=await fetch(url);if(!r.ok)throw new Error(await r.text());return r.json();}
+    function fillSelect(el,opts,sel){el.innerHTML='';opts.forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=v;if(v===sel)o.selected=true;el.appendChild(o);});}
+    async function loadDrives(){const data=await fetchJSON('/api/drives');fillSelect(document.getElementById('drive_letter'),data.drives,'{{ defaults.drive_letter }}');}
+    async function loadCalibration(){const d=document.getElementById('drive_letter').value||'Z:';const dir=document.getElementById('calibration_directories').value;const data=await fetchJSON(`/api/calibration-folders?drive=${encodeURIComponent(d)}&dir=${encodeURIComponent(dir)}`);fillSelect(document.getElementById('calibration_folder'),data.folders,null);}
+    document.addEventListener('DOMContentLoaded',()=>{loadDrives();loadCalibration();document.getElementById('drive_letter').addEventListener('change',loadCalibration);document.getElementById('refresh-cal').addEventListener('click',loadCalibration);document.getElementById('config-form').addEventListener('submit',async e=>{e.preventDefault();const fd=new FormData(e.target);const r=await fetch('/submit',{method:'POST',body:fd});alert('Saved! '+JSON.stringify(await r.json(),null,2));});});
+  </script>
+  <script>
+  async function loadDataFolders(){
+    const drive = document.getElementById('drive_letter').value || 'Z:';
+    const dataFolder = document.getElementById('data_folder').value || '\\\\NoRI\\\\Masha';
+    const url = `/api/data-folders?drive=${encodeURIComponent(drive)}&data_folder=${encodeURIComponent(dataFolder)}`;
+    try {
+      const data = await fetchJSON(url);
+      const container = document.getElementById('folder-checkboxes');
+      container.innerHTML = '';
+      for (const f of data.folders) {
+        const label = document.createElement('label');
+        label.style.display = 'flex';
+        label.style.alignItems = 'center';
+        label.style.gap = '6px';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.name = 'selected_folders';
+        cb.value = f;
+        label.appendChild(cb);
+        label.appendChild(document.createTextNode(f));
+        container.appendChild(label);
+      }
+    } catch(e) {
+      console.error(e);
+    }
+  }
+
+  // Refresh list whenever drive or data folder changes
+  document.getElementById('refresh-folders').addEventListener('click', loadDataFolders);
+  document.getElementById('drive_letter').addEventListener('change', loadDataFolders);
+  document.getElementById('data_folder').addEventListener('change', loadDataFolders);
+  </script>
+
+</body>
+</html>
