@@ -39,15 +39,15 @@ os.environ["PATH"] = os.environ["JAVA_HOME"] + r"\bin;" + os.environ["PATH"]
 ij = imagej.init('sc.fiji:fiji', mode="headless")
 
 # input parameters
-data_folder = r"\NoRI\Masha\20250903 Ageing Atlas 21mo"
+data_folder = r"\NoRI\Masha\20241120 Ageing Atlas 9mo"
 stitched_files_folder = r"\NoRI\Masha\Stitched"
 powersetting='UP'
-merge_order = ["NORI_c1", "NORI_c2", "NORI_c3"]#, "IF_c1", "IF_c2", "IF_c3", "IF_c4"]
+# merge_order = ["NORI_c1", "NORI_c2", "NORI_c3"]#, "IF_c1", "IF_c2", "IF_c3", "IF_c4"]
 file_separator = '_MAP'
 overwrite_files = False
 drive_letter = "Z:"
 network_path = r"\\research.files.med.harvard.edu\Sysbio"
-calibration_folder = os.path.join(drive_letter + r"\NoRI\Calibration Archive\20250903 calibration")
+calibration_folder = os.path.join(drive_letter + r"\NoRI\Calibration Archive\20241120 calibration")
 
 
 # Dependent varibles
@@ -170,7 +170,7 @@ for size in [256, 512, 640, 800, 1024, 2048, 4096]:
 possible_stitching_combinations = stiching_combinations()
 
 # Process all nori files inside data directory
-for folder in folders[5:]:
+for folder in folders[0:]:
     print(folder)
     # Folders for outputs
     os.makedirs(os.path.join(path, folder, rename_files_folder), exist_ok=True)
@@ -180,6 +180,7 @@ for folder in folders[5:]:
     composite_dir = os.path.join(path, folder, decomp_files_folder, 'composite')
     os.makedirs(composite_dir, exist_ok=True)
 
+    all_if_files = []
     # Find all .oir files
     oir_files = glob.glob(os.path.join(os.path.join(path, folder), 
                                        "**", OIR_EXT), 
@@ -191,6 +192,9 @@ for folder in folders[5:]:
                 # Convert oir files to tif
                 tif_path = oir_file.replace('.oir', '.tif')
                 image_np = oir_to_tif(oir_file, ij, tif_path)
+                # check if IF file
+                if '_IF_' in oir_file:
+                    all_if_files.append(oir_file.replace('.oir', '.tif'))
 
                 # Match nori channels
                 if '_NORI_' in file_name:
@@ -263,7 +267,8 @@ for folder in folders[5:]:
             print(sample_name, map_name, x, y, shift)
 
             # Stitch all tiles to one image
-            tiles_stitching(x, 
+            tiles_stitching(all_if_files,
+                            x, 
                             y, 
                             shift, 
                             path, 
