@@ -1,5 +1,6 @@
 from flask import Flask, render_template, jsonify, request
 import os, string
+from postprocessing import start
 
 app = Flask(__name__, template_folder='templates')
 
@@ -20,11 +21,12 @@ def join_windows_path(drive, rel):
 def index():
     defaults = {
         'drive_letter': 'Z:',
-        'data_folder': r'\\NoRI\\Masha\\20250423 Ahmed Colon Cancer D14 NoRI',
-        'stitched_files_folder': r'\\NoRI\\Masha\\Stitched',
+        'data_folder': 'NoRI\\Masha\\20250423 Ahmed Colon Cancer D14 NoRI',
+        'stitched_files_folder': 'NoRI\\Masha\\Stitched',
         'powersetting': 'UP',
         'file_separator': '_MAP',
-        'calibration_directories': r'\\NoRI\\Calibration Archive'
+        'calibration_directories': 'NoRI\\Calibration Archive',
+        'network_path': 'research.files.med.harvard.edu\Sysbio'
     }
     return render_template('home.html', defaults=defaults)
 
@@ -56,7 +58,9 @@ def submit():
     # Checkbox values come as multiple "folders" entries:
     selected = request.form.getlist("selected_folders")
     data["selected_folders"] = selected
-    print(data)
+    start(data)
+    # for msg in start(data):
+    #     yield f"data: {msg}\n\n"
     return jsonify({"status": "ok", "message": 'Script finished'})
 
 if __name__ == '__main__':
