@@ -633,6 +633,7 @@ def tiles_stitching(all_if_files,
     out_stitched  = os.path.join(path_stitched, sample_name + '_MAP' + map_name + '.tif')
 
     # Fluorescent files stitching
+    print(all_if_files)
     if len(all_if_files)>0:
         samples_if = []
         for file in all_if_files:
@@ -648,6 +649,7 @@ def tiles_stitching(all_if_files,
         df_name = samples_if[samples_if['sample_name']==sample_name]
         df_map = df_name[df_name['map_name']==map_name]
         print(df_map['tile_id'].max())
+        df_map.to_csv('test.csv')
         tiles_number = int(df_map['tile_id'].max())
 
         all_tile_if_files = []
