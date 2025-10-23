@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NoRI Tool • Configuration</title>
+  <style>
+    :root{
+      --bg:#0b1020; --panel:#0f1730; --ink:#c9d6ff; --muted:#8aa0c8; --accent:#6ad1ff; --ok:#3ddc97; --danger:#ff6b6b;
+      --mono:ui-monospace,Menlo,Consolas; --sans:Inter,system-ui,Roboto,Helvetica,Arial; --radius:16px;
+    }
+    body{background:linear-gradient(180deg,#0a0f1e,#070b16);color:var(--ink);font-family:var(--sans);margin:0;}
+    header{max-width:900px;margin:40px auto;padding:0 20px}
+    h1{margin:0;font-size:28px;}
+    .subtitle{color:var(--muted);margin-top:6px}
+    main{max-width:900px;margin:20px auto;padding:0 20px}
+    .panel{background:#0f1730;border-radius:var(--radius);padding:24px;box-shadow:0 0 20px rgba(0,0,0,.3)}
+    form{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}
+    .field{grid-column:span 6;display:flex;flex-direction:column}
+    .field.full{grid-column:span 12}
+    label{font-size:12px;text-transform:uppercase;color:var(--muted);letter-spacing:.05em}
+    input[type=text],select{background:#0a1125;border:1px solid #1c2747;border-radius:12px;padding:10px 12px;color:var(--ink);font-family:var(--mono)}
+    button{border:none;border-radius:12px;padding:12px 16px;cursor:pointer;font-weight:600}
+    .primary{background:var(--accent);color:#06121c}
+    .ghost{background:transparent;color:var(--ink);border:1px solid #22305a}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Postprocessing of NoRI images</h1>
+    <!-- <div class="subtitle">Modern interface for scientific pipelines</div> -->
+  </header>
+  <main>
+    <div class="panel">
+      <form id="config-form">
+        <!-- 1. Drive letter -->
+        <div class="field full">
+          <label for="drive_letter">Drive Letter</label>
+          <select id="drive_letter" name="drive_letter"></select>
+        </div>
+        <!-- 1.2. Network path-->
+        <div class="field full">
+          <label for="data_folder">Network Path</label>
+          <input type="text" id="network_path" name="network_path" value="{{ defaults.network_path }}">
+        </div>
+        <!-- 2. Data folder -->
+        <div class="field full">
+          <label for="data_folder">Data Folder</label>
+          <input type="text" id="data_folder" name="data_folder" value="{{ defaults.data_folder }}">
+        </div>
+        <!-- 3. Stitched files folder -->
+        <div class="field full">
+          <label for="stitched_files_folder">Stitched Files Folder</label>
+          <input type="text" id="stitched_files_folder" name="stitched_files_folder" value="{{ defaults.stitched_files_folder }}">
+        </div>
+        <!-- 4. Calibration directory -->
+        <div class="field full">
+          <label for="calibration_directories">Calibration Directories</label>
+          <input type="text" id="calibration_directories" name="calibration_directories" value="{{ defaults.calibration_directories }}">
+        </div>
+        <!-- 5. Calibration folder -->
+        <div class="field full">
+          <label for="calibration_folder">Calibration Folder</label>
+          <select id="calibration_folder" name="calibration_folder"></select>
+        </div>
+        <!-- Data subfolders checkboxes -->
+        <div class="field full">
+          <label>Data Subfolders (select for postprocess)</label>
+          <div id="folder-checkboxes" style="display:flex;flex-wrap:wrap;gap:10px;padding:8px 0;"></div>
+          <button class="ghost" type="button" id="refresh-folders">Refresh Folder List</button>
+        </div>
+        <!-- 6. File separator + power setting -->
+        <div class="field">
+          <label for="file_separator">File Separator</label>
+          <input type="text" id="file_separator" name="file_separator" value="{{ defaults.file_separator }}">
+        </div>
+        <div class="field">
+          <label for="powersetting">Power Setting</label>
+          <input type="text" id="powersetting" name="powersetting" value="{{ defaults.powersetting }}">
+        </div>
+        <div class="field full">
+          <button class="primary" type="submit">Start postprocessing of NORI images.</button>
+          <button class="ghost" type="button" id="refresh-cal">Refresh settings</button>
+        </div>
+      </form>
+    </div>
+    <form id="config-form" action="#" novalidate>
+      <!-- Log output goes here -->
+      <div class="field full">
+        <label>Processing Log</label>
+        <textarea id="log" rows="12"
+          style="width:100%;background:#0a1125;color:#c9d6ff;border:1px solid #1c2747;border-radius:12px;padding:10px;font-family:ui-monospace,Menlo,Consolas"
+          readonly></textarea>
+      </div>
+    </form>
+  </main>
+  <script>
+(() => {
+  // --- state ---
+  let pollTimer = null;
+
+  // --- utils ---
+  async function fetchJSON(url) {
+    const r = await fetch(url, { cache: 'no-store' });
+    if (!r.ok) throw new Error(await r.text());
+    return r.json();
+  }
+
+  function fillSelect(el, opts, sel) {
+    el.innerHTML = '';
+    for (const v of opts) {
+      const o = document.createElement('option');
+      o.value = v;
+      o.textContent = v;
+      if (v === sel) o.selected = true;
+      el.appendChild(o);
+    }
+  }
+
+  function stopPolling() {
+    if (pollTimer !== null) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  }
+
+  // --- loaders ---
+  async function loadDrives() {
+    const data = await fetchJSON('/api/drives');
+    const el = document.getElementById('drive_letter');
+    if (!el) return;
+    fillSelect(el, data.drives || [], '{{ defaults.drive_letter }}');
+  }
+
+  async function loadCalibration() {
+    const drive = (document.getElementById('drive_letter')?.value || 'Z:');
+    const dir = document.getElementById('calibration_directories')?.value || '\\\\NoRI\\\\Calibration Archive';
+    const data = await fetchJSON(`/api/calibration-folders?drive=${encodeURIComponent(drive)}&dir=${encodeURIComponent(dir)}`);
+    const el = document.getElementById('calibration_folder');
+    if (!el) return;
+    fillSelect(el, data.folders || [], null);
+  }
+
+  async function loadDataFolders() {
+    const drive = (document.getElementById('drive_letter')?.value || 'Z:');
+    const dataFolder = document.getElementById('data_folder')?.value || '\\\\NoRI\\\\Masha';
+    const url = `/api/data-folders?drive=${encodeURIComponent(drive)}&data_folder=${encodeURIComponent(dataFolder)}`;
+    const data = await fetchJSON(url);
+    const container = document.getElementById('folder-checkboxes');
+    if (!container) return;
+    container.innerHTML = '';
+    for (const f of (data.folders || [])) {
+      const label = document.createElement('label');
+      label.style.display = 'flex';
+      label.style.alignItems = 'center';
+      label.style.gap = '6px';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.name = 'selected_folders';
+      cb.value = f;
+      cb.checked = true; // default select all
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(f));
+      container.appendChild(label);
+    }
+  }
+
+  // --- progress polling ---
+  async function pollProgress() {
+    stopPolling();
+    const logEl = document.getElementById('log');
+    pollTimer = setInterval(async () => {
+      try {
+        const data = await fetchJSON('/progress');
+        if (logEl) {
+          logEl.value = (data.log || []).join('\n');
+          logEl.scrollTop = logEl.scrollHeight;
+          if (data.done) {
+            stopPolling();
+            if (data.error) {
+              logEl.value += `\nERROR: ${data.error}`;
+            } else {
+              logEl.value += `\n\n✅ Processing complete.`;
+            }
+            logEl.scrollTop = logEl.scrollHeight;
+          }
+        }
+      } catch (e) {
+        stopPolling();
+        if (logEl) {
+          logEl.value += `\nPolling stopped: ${e.message}`;
+          logEl.scrollTop = logEl.scrollHeight;
+        }
+      }
+    }, 1000);
+  }
+
+  // --- init ---
+  document.addEventListener('DOMContentLoaded', async () => {
+    // Initial loads
+    try {
+      await loadDrives();
+    } catch {}
+    Promise.allSettled([loadCalibration(), loadDataFolders()]);
+
+    // Listeners
+    const driveEl = document.getElementById('drive_letter');
+    if (driveEl) {
+      driveEl.addEventListener('change', () => {
+        loadCalibration();
+        loadDataFolders();
+      });
+    }
+    const refreshCal = document.getElementById('refresh-cal');
+    if (refreshCal) refreshCal.addEventListener('click', loadCalibration);
+
+    const refreshFolders = document.getElementById('refresh-folders');
+    if (refreshFolders) refreshFolders.addEventListener('click', loadDataFolders);
+
+    const dataFolderEl = document.getElementById('data_folder');
+    if (dataFolderEl) dataFolderEl.addEventListener('change', loadDataFolders);
+
+    // Single submit handler (no alerts, no navigation)
+    const form = document.getElementById('config-form');
+    if (form) {
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const submitBtn = e.submitter || form.querySelector('button[type="submit"]');
+        if (submitBtn) submitBtn.disabled = true;
+
+        const logEl = document.getElementById('log');
+        if (logEl) logEl.value = 'Job starting...\n';
+
+        stopPolling();
+        const fd = new FormData(form);
+        try {
+          const res = await fetch('/submit', { method: 'POST', body: fd });
+          if (!res.ok) {
+            const txt = await res.text();
+            if (logEl) logEl.value += `Failed to start: ${txt}`;
+          } else {
+            await res.json(); // ignore payload; just start polling
+            pollProgress();
+          }
+        } catch (err) {
+          if (logEl) logEl.value += `Failed to start: ${err}`;
+        } finally {
+          if (submitBtn) submitBtn.disabled = false;
+        }
+      });
+    }
+  });
+})();
+</script>
+
+
+</body>
+</html>

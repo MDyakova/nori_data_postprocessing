@@ -550,6 +550,8 @@ def blend_distance_feather(img1, img2, mask1=None, mask2=None, eps=1e-6, power=1
     return out.astype(img1.dtype)
 
 def tiles_stitching(all_if_files,
+                    sample_name,
+                    map_name,
                     x, 
                     y, 
                     shift, 
@@ -600,9 +602,9 @@ def tiles_stitching(all_if_files,
     for file in composite_files:
         if '.tif' in file:
             sample_name = file.split(file_separator)[0]
-            map_name = file.split(file_separator)[1].split('_')[0]
+            map_name_i = file.split(file_separator)[1].split('_')[0]
             tile_id = int(file.split('.tif')[0].split('_')[-1])
-            samples.append([file, sample_name, map_name, tile_id])
+            samples.append([file, sample_name, map_name_i, tile_id])
     samples = pd.DataFrame(samples, columns=('file', 'sample_name', 'map_name', 'tile_id'))
 
     df_name = samples[samples['sample_name']==sample_name]
@@ -640,14 +642,13 @@ def tiles_stitching(all_if_files,
                 # path_if = '\\'.join(file.split('\\')[:-1])
                 file_name = file.split('\\')[-1]
                 sample_name = file_name.split(file_separator)[0]
-                map_name = file_name.split(file_separator)[1].split('_')[0]
+                map_name_i = file_name.split(file_separator)[1].split('_')[0]
                 tile_id = int(file_name.split('.tif')[0].split('_')[-1])
-                samples_if.append([file, file_name, sample_name, map_name, tile_id])
+                samples_if.append([file, file_name, sample_name, map_name_i, tile_id])
         samples_if = pd.DataFrame(samples_if, columns=('file', 'file_name', 'sample_name', 'map_name', 'tile_id'))
 
         df_name = samples_if[samples_if['sample_name']==sample_name]
         df_map = df_name[df_name['map_name']==map_name]
-        print(df_map['tile_id'].max())
         tiles_number = int(df_map['tile_id'].max())
 
         all_tile_if_files = []
