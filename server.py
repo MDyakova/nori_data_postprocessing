@@ -53,15 +53,6 @@ def api_data_folders():
         folders = []
     return jsonify({"base_path": base, "folders": sorted(folders)})
 
-# @app.post('/submit')
-# def submit():
-#     data = {k: v for k, v in request.form.items()}
-#     # Checkbox values come as multiple "folders" entries:
-#     selected = request.form.getlist("selected_folders")
-#     data["selected_folders"] = selected
-#     start(data)
-#     return jsonify({"status": "ok", "message": 'Script finished'})
-
 progress_log = []
 status = {"running": False, "done": False, "error": None}
 

@@ -37,12 +37,7 @@ def start(data, notify):
     """
     Launch postprocessing of NORI images
     """
-    # # Add path
-    # os.environ["JAVA_HOME"] = r"C:\Program Files\Eclipse Adoptium\jdk-21.0.8.9-hotspot"
-    # os.environ["PATH"] = os.environ["JAVA_HOME"] + r"\bin;" + os.environ["PATH"]
-
     # create imagej session
-    # ij = imagej.init('sc.fiji:fiji', mode="headless")
     ij = get_ij()
 
     # input parameters
@@ -78,14 +73,9 @@ def start(data, notify):
     path = os.path.join(drive_letter + data_folder)
     path_stitched = os.path.join(drive_letter + stitched_files_folder)
 
-    # # Get folders list
-    # folders = os.listdir(path)
-    # folders = list(filter(lambda p: os.path.isdir(os.path.join(path, p)), folders))
-
     # Calibration data
     # Compute dark noize
     bg_file_path = os.path.join(calibration_folder, 'cal_linpol1', 'signalX', 'bg.tif')
-    bg_files = os.listdir(os.path.join(calibration_folder, 'cal_linpol1', 'signalX'))
     imbg = tiff.imread(bg_file_path)
     bglevel = np.mean(imbg)
 
@@ -290,18 +280,4 @@ def start(data, notify):
                                 path_stitched,
                                 file_separator,
                                 tile_size)
-        #         break
-        #     break
-        # break
-
-# if __name__ == "__main__":
-#     data = {'drive_letter': 'Z:', 
-#             'data_folder': '\\NoRI\\Masha\\20250404 Ageing Atlas - Training Rats', 
-#             'stitched_files_folder': '\\NoRI\\Masha\\Stitched', 
-#             'calibration_directories': '\\NoRI\\Calibration Archive', 
-#             'calibration_folder': '20250404 calibration', 
-#             'selected_folders': ['Colon_1', 'Kidney_1'], 
-#             'file_separator': '_MAP', 
-#             'powersetting': 'UP',
-#             'network_path': r"\\research.files.med.harvard.edu\Sysbio"}
-#     start(data)
+                
