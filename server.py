@@ -1,6 +1,7 @@
 from flask import Flask, render_template, jsonify, request
 import os, string
 from postprocessing import start
+import threading
 
 app = Flask(__name__, template_folder='templates')
 
@@ -52,16 +53,52 @@ def api_data_folders():
         folders = []
     return jsonify({"base_path": base, "folders": sorted(folders)})
 
+# @app.post('/submit')
+# def submit():
+#     data = {k: v for k, v in request.form.items()}
+#     # Checkbox values come as multiple "folders" entries:
+#     selected = request.form.getlist("selected_folders")
+#     data["selected_folders"] = selected
+#     start(data)
+#     return jsonify({"status": "ok", "message": 'Script finished'})
+
+progress_log = []
+status = {"running": False, "done": False, "error": None}
+
+def notify(msg):
+    print(msg)
+    progress_log.append(msg)
+
 @app.post('/submit')
 def submit():
-    data = {k: v for k, v in request.form.items()}
-    # Checkbox values come as multiple "folders" entries:
-    selected = request.form.getlist("selected_folders")
-    data["selected_folders"] = selected
-    start(data)
-    # for msg in start(data):
-    #     yield f"data: {msg}\n\n"
-    return jsonify({"status": "ok", "message": 'Script finished'})
+    data = request.form.to_dict(flat=True)
+    data['selected_folders'] = request.form.getlist('selected_folders')
 
-if __name__ == '__main__':
-    app.run(debug=True)
+    progress_log.clear()
+    status.update({"running": True, "done": False, "error": None})
+
+    def worker():
+        try:
+            from postprocessing import start
+            start(data, notify)
+            status.update({"running": False, "done": True})
+        except Exception as e:
+            status.update({"running": False, "done": True, "error": str(e)})
+            # notify was already called in main, but ensure at least one line:
+            if not progress_log or not progress_log[-1].startswith("❌ ERROR"):
+                notify(f"❌ ERROR: {e}")
+
+    threading.Thread(target=worker, daemon=True).start()
+    return jsonify({"status": "started"})
+
+@app.get('/progress')
+def progress():
+    return jsonify({
+        "running": status["running"],
+        "done": status["done"],
+        "error": status["error"],
+        "log": progress_log,
+    })
+
+if __name__ == "__main__":
+    app.run(debug=True, use_reloader=False)  # <- avoid double init in dev

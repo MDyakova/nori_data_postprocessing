@@ -27,8 +27,8 @@
 </head>
 <body>
   <header>
-    <h1>NoRI Tool • Configuration</h1>
-    <div class="subtitle">Modern interface for scientific pipelines</div>
+    <h1>Postprocessing of NoRI images</h1>
+    <!-- <div class="subtitle">Modern interface for scientific pipelines</div> -->
   </header>
   <main>
     <div class="panel">
@@ -84,47 +84,175 @@
         </div>
       </form>
     </div>
+    <form id="config-form" action="#" novalidate>
+      <!-- Log output goes here -->
+      <div class="field full">
+        <label>Processing Log</label>
+        <textarea id="log" rows="12"
+          style="width:100%;background:#0a1125;color:#c9d6ff;border:1px solid #1c2747;border-radius:12px;padding:10px;font-family:ui-monospace,Menlo,Consolas"
+          readonly></textarea>
+      </div>
+    </form>
   </main>
   <script>
-    async function fetchJSON(url){const r=await fetch(url);if(!r.ok)throw new Error(await r.text());return r.json();}
-    function fillSelect(el,opts,sel){el.innerHTML='';opts.forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=v;if(v===sel)o.selected=true;el.appendChild(o);});}
-    async function loadDrives(){const data=await fetchJSON('/api/drives');fillSelect(document.getElementById('drive_letter'),data.drives,'{{ defaults.drive_letter }}');}
-    async function loadCalibration(){const d=document.getElementById('drive_letter').value||'Z:';const dir=document.getElementById('calibration_directories').value;const data=await fetchJSON(`/api/calibration-folders?drive=${encodeURIComponent(d)}&dir=${encodeURIComponent(dir)}`);fillSelect(document.getElementById('calibration_folder'),data.folders,null);}
-    document.addEventListener('DOMContentLoaded',()=>{loadDrives();loadCalibration();document.getElementById('drive_letter').addEventListener('change',loadCalibration);document.getElementById('refresh-cal').addEventListener('click',loadCalibration);document.getElementById('config-form').addEventListener('submit',async e=>{e.preventDefault();const fd=new FormData(e.target);const r=await fetch('/submit',{method:'POST',body:fd});alert('Saved! '+JSON.stringify(await r.json(),null,2));});});
-  </script>
-  <script>
-  async function loadDataFolders(){
-    const drive = document.getElementById('drive_letter').value || 'Z:';
-    const dataFolder = document.getElementById('data_folder').value || '\\\\NoRI\\\\Masha';
-    const url = `/api/data-folders?drive=${encodeURIComponent(drive)}&data_folder=${encodeURIComponent(dataFolder)}`;
-    try {
-      const data = await fetchJSON(url);
-      const container = document.getElementById('folder-checkboxes');
-      container.innerHTML = '';
-      for (const f of data.folders) {
-        const label = document.createElement('label');
-        label.style.display = 'flex';
-        label.style.alignItems = 'center';
-        label.style.gap = '6px';
-        const cb = document.createElement('input');
-        cb.type = 'checkbox';
-        cb.name = 'selected_folders';
-        cb.value = f;
-        cb.checked = true;
-        label.appendChild(cb);
-        label.appendChild(document.createTextNode(f));
-        container.appendChild(label);
-      }
-    } catch(e) {
-      console.error(e);
+(() => {
+  // --- state ---
+  let pollTimer = null;
+
+  // --- utils ---
+  async function fetchJSON(url) {
+    const r = await fetch(url, { cache: 'no-store' });
+    if (!r.ok) throw new Error(await r.text());
+    return r.json();
+  }
+
+  function fillSelect(el, opts, sel) {
+    el.innerHTML = '';
+    for (const v of opts) {
+      const o = document.createElement('option');
+      o.value = v;
+      o.textContent = v;
+      if (v === sel) o.selected = true;
+      el.appendChild(o);
     }
   }
 
-  // Refresh list whenever drive or data folder changes
-  document.getElementById('refresh-folders').addEventListener('click', loadDataFolders);
-  document.getElementById('drive_letter').addEventListener('change', loadDataFolders);
-  document.getElementById('data_folder').addEventListener('change', loadDataFolders);
-  </script>
+  function stopPolling() {
+    if (pollTimer !== null) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  }
+
+  // --- loaders ---
+  async function loadDrives() {
+    const data = await fetchJSON('/api/drives');
+    const el = document.getElementById('drive_letter');
+    if (!el) return;
+    fillSelect(el, data.drives || [], '{{ defaults.drive_letter }}');
+  }
+
+  async function loadCalibration() {
+    const drive = (document.getElementById('drive_letter')?.value || 'Z:');
+    const dir = document.getElementById('calibration_directories')?.value || '\\\\NoRI\\\\Calibration Archive';
+    const data = await fetchJSON(`/api/calibration-folders?drive=${encodeURIComponent(drive)}&dir=${encodeURIComponent(dir)}`);
+    const el = document.getElementById('calibration_folder');
+    if (!el) return;
+    fillSelect(el, data.folders || [], null);
+  }
+
+  async function loadDataFolders() {
+    const drive = (document.getElementById('drive_letter')?.value || 'Z:');
+    const dataFolder = document.getElementById('data_folder')?.value || '\\\\NoRI\\\\Masha';
+    const url = `/api/data-folders?drive=${encodeURIComponent(drive)}&data_folder=${encodeURIComponent(dataFolder)}`;
+    const data = await fetchJSON(url);
+    const container = document.getElementById('folder-checkboxes');
+    if (!container) return;
+    container.innerHTML = '';
+    for (const f of (data.folders || [])) {
+      const label = document.createElement('label');
+      label.style.display = 'flex';
+      label.style.alignItems = 'center';
+      label.style.gap = '6px';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.name = 'selected_folders';
+      cb.value = f;
+      cb.checked = true; // default select all
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(f));
+      container.appendChild(label);
+    }
+  }
+
+  // --- progress polling ---
+  async function pollProgress() {
+    stopPolling();
+    const logEl = document.getElementById('log');
+    pollTimer = setInterval(async () => {
+      try {
+        const data = await fetchJSON('/progress');
+        if (logEl) {
+          logEl.value = (data.log || []).join('\n');
+          logEl.scrollTop = logEl.scrollHeight;
+          if (data.done) {
+            stopPolling();
+            if (data.error) {
+              logEl.value += `\nERROR: ${data.error}`;
+            } else {
+              logEl.value += `\n\n✅ Processing complete.`;
+            }
+            logEl.scrollTop = logEl.scrollHeight;
+          }
+        }
+      } catch (e) {
+        stopPolling();
+        if (logEl) {
+          logEl.value += `\nPolling stopped: ${e.message}`;
+          logEl.scrollTop = logEl.scrollHeight;
+        }
+      }
+    }, 1000);
+  }
+
+  // --- init ---
+  document.addEventListener('DOMContentLoaded', async () => {
+    // Initial loads
+    try {
+      await loadDrives();
+    } catch {}
+    Promise.allSettled([loadCalibration(), loadDataFolders()]);
+
+    // Listeners
+    const driveEl = document.getElementById('drive_letter');
+    if (driveEl) {
+      driveEl.addEventListener('change', () => {
+        loadCalibration();
+        loadDataFolders();
+      });
+    }
+    const refreshCal = document.getElementById('refresh-cal');
+    if (refreshCal) refreshCal.addEventListener('click', loadCalibration);
+
+    const refreshFolders = document.getElementById('refresh-folders');
+    if (refreshFolders) refreshFolders.addEventListener('click', loadDataFolders);
+
+    const dataFolderEl = document.getElementById('data_folder');
+    if (dataFolderEl) dataFolderEl.addEventListener('change', loadDataFolders);
+
+    // Single submit handler (no alerts, no navigation)
+    const form = document.getElementById('config-form');
+    if (form) {
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const submitBtn = e.submitter || form.querySelector('button[type="submit"]');
+        if (submitBtn) submitBtn.disabled = true;
+
+        const logEl = document.getElementById('log');
+        if (logEl) logEl.value = 'Job starting...\n';
+
+        stopPolling();
+        const fd = new FormData(form);
+        try {
+          const res = await fetch('/submit', { method: 'POST', body: fd });
+          if (!res.ok) {
+            const txt = await res.text();
+            if (logEl) logEl.value += `Failed to start: ${txt}`;
+          } else {
+            await res.json(); // ignore payload; just start polling
+            pollProgress();
+          }
+        } catch (err) {
+          if (logEl) logEl.value += `Failed to start: ${err}`;
+        } finally {
+          if (submitBtn) submitBtn.disabled = false;
+        }
+      });
+    }
+  });
+})();
+</script>
+
 
 </body>
 </html>

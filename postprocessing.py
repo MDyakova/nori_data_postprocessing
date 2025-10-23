@@ -18,6 +18,7 @@ import seaborn as sns
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.linear_model import LinearRegression
 from skimage.transform import resize
+import time
 
 from utilities import (intensity_flat_field_mask, 
                        oir_to_tif, 
@@ -30,17 +31,19 @@ from utilities import (intensity_flat_field_mask,
                        combine_channels,
                        find_stiching_map,
                        tiles_stitching)
+from imagej_session import get_ij
 
-def start(data):
+def start(data, notify):
     """
     Launch postprocessing of NORI images
     """
-    # Add path
-    os.environ["JAVA_HOME"] = r"C:\Program Files\Eclipse Adoptium\jdk-21.0.8.9-hotspot"
-    os.environ["PATH"] = os.environ["JAVA_HOME"] + r"\bin;" + os.environ["PATH"]
+    # # Add path
+    # os.environ["JAVA_HOME"] = r"C:\Program Files\Eclipse Adoptium\jdk-21.0.8.9-hotspot"
+    # os.environ["PATH"] = os.environ["JAVA_HOME"] + r"\bin;" + os.environ["PATH"]
 
     # create imagej session
-    ij = imagej.init('sc.fiji:fiji', mode="headless")
+    # ij = imagej.init('sc.fiji:fiji', mode="headless")
+    ij = get_ij()
 
     # input parameters
     # data_folder = r"\NoRI\Masha\20241120 Ageing Atlas 9mo"
@@ -68,8 +71,6 @@ def start(data):
     # nori_channels_folder = os.path.join(decomp_files_folder, "composite")
     OIR_EXT = "*.oir"
     decomp_m_filename = 'M_bgffc2_linpol1.mat'
-
-    # yield "Load calibration data"
 
     # Data connection
     mount_cmd = f'net use {drive_letter} {network_path}'
@@ -186,7 +187,7 @@ def start(data):
         composite_dir = os.path.join(path, folder, decomp_files_folder, 'composite')
         os.makedirs(composite_dir, exist_ok=True)
 
-        # yield f"File conversion, background removal, and flat field correction of {folder} folder"
+        notify(f"File conversion, background removal, and flat field correction of {folder} folder")
 
         all_if_files = []
         # Find all .oir files
@@ -233,7 +234,7 @@ def start(data):
                                                                 renamed_file)
 
         # Processing (4) decomposition
-        # yield f"Decomposition of {folder} folder"
+        notify(f"Decomposition of {folder} folder")
         all_flat_files = os.listdir(os.path.join(path, folder, ffc_files_folder))
         all_water_files = list(filter(lambda p: strw in p, all_flat_files))
         for water_file in all_water_files[0:]:
@@ -252,7 +253,7 @@ def start(data):
                                     file_separator)
 
         # Combine all files
-        # yield f"Joining and stitching tiles of {folder} folder"
+        notify(f"Joining and stitching tiles of {folder} folder")
         for sample_name in pd.unique(samples['sample_name']):
             df_name = samples[samples['sample_name']==sample_name]
             for map_name in pd.unique(df_name['map_name']):
@@ -289,9 +290,9 @@ def start(data):
                                 path_stitched,
                                 file_separator,
                                 tile_size)
-                break
-            break
-        break
+        #         break
+        #     break
+        # break
 
 # if __name__ == "__main__":
 #     data = {'drive_letter': 'Z:', 
