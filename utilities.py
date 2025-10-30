@@ -139,17 +139,30 @@ def match_channels(image_np, oir_file, file_name, masks, path, folder, rename_fi
     """
     Match nori channels and return flat fiels correction mask
     """
-    if '_Cycle_02\\' in oir_file:
-        renamed_file = file_name + '_channel_waterUP.tif'
-        immask_channel = masks[f'water_{str(image_np.values.shape[0])}']
-    elif '_Cycle_01\\' in oir_file:
-        renamed_file = file_name + '_channel_lipidUP.tif'
-        immask_channel = masks[f'lipid_{str(image_np.values.shape[0])}']
-    elif '_Cycle\\' in oir_file:
-        renamed_file = file_name + '_channel_proteinUP.tif'
-        immask_channel = masks[f'protein_{str(image_np.values.shape[0])}']
-    else:
-        immask_channel = None
+    if len(image_np.values.shape)==2:
+        if '_Cycle_02\\' in oir_file:
+            renamed_file = file_name + '_channel_waterUP.tif'
+            immask_channel = masks[f'water_{str(image_np.values.shape[0])}']
+        elif '_Cycle_01\\' in oir_file:
+            renamed_file = file_name + '_channel_lipidUP.tif'
+            immask_channel = masks[f'lipid_{str(image_np.values.shape[0])}']
+        elif '_Cycle\\' in oir_file:
+            renamed_file = file_name + '_channel_proteinUP.tif'
+            immask_channel = masks[f'protein_{str(image_np.values.shape[0])}']
+        else:
+            immask_channel = None
+    elif len(image_np.values.shape)==4:
+        if '_Cycle_02\\' in oir_file:
+            renamed_file = file_name + '_channel_waterUP.tif'
+            immask_channel = masks[f'water_{str(image_np.values.shape[1])}']
+        elif '_Cycle_01\\' in oir_file:
+            renamed_file = file_name + '_channel_lipidUP.tif'
+            immask_channel = masks[f'lipid_{str(image_np.values.shape[1])}']
+        elif '_Cycle\\' in oir_file:
+            renamed_file = file_name + '_channel_proteinUP.tif'
+            immask_channel = masks[f'protein_{str(image_np.values.shape[1])}']
+        else:
+            immask_channel = None
 
     file_path = os.path.join(path, folder, rename_files_folder, renamed_file)
     tiff.imwrite(file_path, image_np.astype('float32'))
@@ -183,22 +196,17 @@ def flat_field_correction(imout,
     """
     if len(imout.shape)==2:
         if imout.shape[0]==imout.shape[1]:
-            # if imout.shape == immask_channel.shape:
             imffc = imout / immask_channel
-            # else:
-            #     resized = cv2.resize(immask_channel, imout.shape, interpolation=cv2.INTER_LINEAR)
-            #     imffc = imout / resized
         else:
             return None
-    else:
+    elif len(imout.shape)==4:
         if imout.shape[1]==imout.shape[2]:
-            mask = np.repeat(immask_channel[:, :, np.newaxis], imout.shape[2], axis=2)
-            imffc = imout / mask
+            if imout.shape[1:3] == immask_channel.shape:
+                imffc = imout[:, :, :, 0] / immask_channel
         else:
             return None
     tiff.imwrite(os.path.join(path, folder, ffc_files_folder, renamed_file), imffc.astype('float32'))
-    
-    return 
+    return imffc
 
 def decomposition(water_file, decomp_matrix,
                   unitconversion, DECOMP_CONVERSION_FACTOR,
@@ -219,52 +227,90 @@ def decomposition(water_file, decomp_matrix,
         protein_im = tiff.imread(os.path.join(path, folder, ffc_files_folder, protein_file)).astype('float32')
         lipid_im = tiff.imread(os.path.join(path, folder, ffc_files_folder, lipid_file)).astype('float32')
         water_im = tiff.imread(os.path.join(path, folder, ffc_files_folder, water_file)).astype('float32')
-        data = np.vstack([
-            lipid_im.ravel(),
-            protein_im.ravel(),
-            water_im.ravel()
-        ])
-        decomp_output = np.matmul(decomp_matrix, data)
-        decomp_output = np.where(decomp_output<0, 0, decomp_output)
-        
-        if normalization_option.lower() == "on":
-            total = np.sum(decomp_output[0:3, :], axis=0) + 1e-6
-        else:
-            total = 100
-    
-        decomp_l = unitconversion[0] * np.reshape(
-            decomp_output[0, :] / total, 
-            lipid_im.shape
-        )
-        decomp_p = unitconversion[1] * np.reshape(
-            decomp_output[1, :] / total, 
-            protein_im.shape
-        )
-        decomp_w = unitconversion[2] * np.reshape(
-            decomp_output[2, :] / total, 
-            water_im.shape
-        )
-        decomp_p = (DECOMP_CONVERSION_FACTOR*decomp_p).astype('float32')
-        decomp_l = (DECOMP_CONVERSION_FACTOR*decomp_l).astype('float32')
-        decomp_w = (DECOMP_CONVERSION_FACTOR*decomp_w).astype('float32')
 
-        # decomp_p = np.where(decomp_p<0, 0, decomp_p)
-        # decomp_l = np.where(decomp_l<0, 0, decomp_l)
-        # decomp_w = np.where(decomp_w<0, 0, decomp_w)
-    
-        tiff.imwrite(os.path.join(path, folder, decomp_files_folder, protein_file), decomp_p)
-        tiff.imwrite(os.path.join(path, folder, decomp_files_folder, lipid_file), decomp_l)
-        tiff.imwrite(os.path.join(path, folder, decomp_files_folder, water_file), decomp_w)
-        # if decomp_output.shape[0] == 4:
-        #     decomp_w = unitconversion[2] * np.reshape(
-        #         decomp_output[3, :] / total, 
-        #         water_im.shape
-        #     )
-        #     decomp_m = (DECOMP_CONVERSION_FACTOR*decomp_m).astype('float32')
-        # else:
-        #     decomp_m = np.NaN
-    
-        # # nosignal = ((lipid_im + protein_im + water_im) == 0)
+        if len(protein_im.shape)==2:
+            data = np.vstack([
+                lipid_im.ravel(),
+                protein_im.ravel(),
+                water_im.ravel()
+            ])
+            decomp_output = np.matmul(decomp_matrix, data)
+            decomp_output = np.where(decomp_output<0, 0, decomp_output)
+            
+            if normalization_option.lower() == "on":
+                total = np.sum(decomp_output[0:3, :], axis=0) + 1e-6
+            else:
+                total = 100
+        
+            decomp_l = unitconversion[0] * np.reshape(
+                decomp_output[0, :] / total, 
+                lipid_im.shape
+            )
+            decomp_p = unitconversion[1] * np.reshape(
+                decomp_output[1, :] / total, 
+                protein_im.shape
+            )
+            decomp_w = unitconversion[2] * np.reshape(
+                decomp_output[2, :] / total, 
+                water_im.shape
+            )
+            decomp_p = (DECOMP_CONVERSION_FACTOR*decomp_p).astype('float32')
+            decomp_l = (DECOMP_CONVERSION_FACTOR*decomp_l).astype('float32')
+            decomp_w = (DECOMP_CONVERSION_FACTOR*decomp_w).astype('float32')
+
+            # decomp_p = np.where(decomp_p<0, 0, decomp_p)
+            # decomp_l = np.where(decomp_l<0, 0, decomp_l)
+            # decomp_w = np.where(decomp_w<0, 0, decomp_w)
+        
+            tiff.imwrite(os.path.join(path, folder, decomp_files_folder, protein_file), decomp_p)
+            tiff.imwrite(os.path.join(path, folder, decomp_files_folder, lipid_file), decomp_l)
+            tiff.imwrite(os.path.join(path, folder, decomp_files_folder, water_file), decomp_w)
+
+        elif len(protein_im.shape)==3:
+            all_decomp_p = []
+            all_decomp_l = []
+            all_decomp_w = []
+            for step in range(protein_im.shape[0]):
+                protein_im_step = protein_im[step]
+                lipid_im_step = lipid_im[step]
+                water_im_step = water_im[step]
+        
+                data = np.vstack([
+                    lipid_im_step.ravel(),
+                    protein_im_step.ravel(),
+                    water_im_step.ravel()
+                ])
+                decomp_output = np.matmul(decomp_matrix, data)
+                decomp_output = np.where(decomp_output<0, 0, decomp_output)
+                
+                if normalization_option.lower() == "on":
+                    total = np.sum(decomp_output[0:3, :], axis=0) + 1e-6
+                else:
+                    total = 100
+            
+                decomp_l = unitconversion[0] * np.reshape(
+                    decomp_output[0, :] / total, 
+                    lipid_im_step.shape
+                )
+                decomp_p = unitconversion[1] * np.reshape(
+                    decomp_output[1, :] / total, 
+                    protein_im_step.shape
+                )
+                decomp_w = unitconversion[2] * np.reshape(
+                    decomp_output[2, :] / total, 
+                    water_im_step.shape
+                )
+                decomp_p = (DECOMP_CONVERSION_FACTOR*decomp_p).astype('float32')
+                decomp_l = (DECOMP_CONVERSION_FACTOR*decomp_l).astype('float32')
+                decomp_w = (DECOMP_CONVERSION_FACTOR*decomp_w).astype('float32')
+        
+                all_decomp_p.append(decomp_p)
+                all_decomp_l.append(decomp_l)
+                all_decomp_w.append(decomp_w)
+                
+            tiff.imwrite(os.path.join(path, folder, decomp_files_folder, protein_file), all_decomp_p)
+            tiff.imwrite(os.path.join(path, folder, decomp_files_folder, lipid_file), all_decomp_l)
+            tiff.imwrite(os.path.join(path, folder, decomp_files_folder, water_file), all_decomp_w)
         
         sio.savemat(os.path.join(path, folder, decomp_files_folder, 'M.mat'), {"M": decomp_matrix_save})   
         log_path = os.path.join(path, folder, decomp_files_folder, "note.txt")
@@ -299,7 +345,10 @@ def find_decomp_files(all_decomp_files,
         if ('.tif' in file) & ('Zone.Identifier' not in file):
             sample_name = file.split(file_separator)[0]
             map_name = file.split(file_separator)[1].split('_')[0]
-            tile_id = int(file.split('_channel')[0].split('_')[-1])
+            if ('_x' in file) & ('_y' in file):
+                tile_id = '_'.join(file.split('_channel')[0].split(file_separator)[-1].split('_')[1:])
+            else:
+                tile_id = int(file.split('_channel')[0].split('_')[-1])
             samples.append([file, sample_name, map_name, tile_id])
     samples = pd.DataFrame(samples, columns=('file', 'sample_name', 'map_name', 'tile_id'))
     return samples
@@ -309,21 +358,32 @@ def clip_inplace(a, lo, hi):
     np.clip(a, lo, hi, out=a)
     return a
 
-def save_ome_tif(path, channels, axes="CZYX"):
+def save_ome_tif(path, channels, axes="ZCYX"):
     """
     channels: list of (Z,Y,X) float32 arrays in calibrated units.
     Saves as float32 OME-TIFF with given axes.
     """
-    data = np.stack(channels, axis=0)  # (C,Z,Y,X)
-    metadata = {'axes': axes}
-    tiff.imwrite(
-        str(path),
-        data,
-        dtype=np.float32,
-        photometric='minisblack',
-        metadata=metadata,
-        imagej=False
-    )
+    if len(channels[0].shape)==2:
+        data = np.stack(channels, axis=0)  # (C,Y,X)
+        metadata = {'axes': 'CYX'}
+        tiff.imwrite(
+            str(path),
+            data,
+            dtype=np.float32,
+            photometric='minisblack',
+            metadata=metadata,
+            imagej=False
+        )
+    else:
+        data = np.stack(channels, axis=1)  # (Z,C,Y,X)
+        tiff.imwrite(
+            str(path),
+            data.astype(np.float32),
+            photometric='minisblack',
+            # metadata={'axes': 'ZCYX'},
+            metadata={'axes': 'CZYX'},
+            imagej=False
+        )
 
 def to_uint8_rgb(protein, lipid, water):
     """
@@ -341,7 +401,7 @@ def to_uint8_rgb(protein, lipid, water):
     B = (scale01(water)   * 255.0).astype(np.uint8)
     return np.stack([R, G, B], axis=-1)
 
-def combine_channels(df_map, tiles_number, 
+def combine_channels(df_map, tile_ids, 
                      strp, strl, strw, 
                      path, folder, decomp_files_folder):
     """
@@ -351,7 +411,7 @@ def combine_channels(df_map, tiles_number,
     all_lipid_images = []
     all_water_images = []
     file_names = []
-    for tile_id in range(1, tiles_number+1):
+    for tile_id in tile_ids:
         tile_files = list(df_map[df_map['tile_id']==tile_id]['file'])
         protein_file = list(filter(lambda p: strp in p, tile_files))[0]
         protein_image = tiff.imread(os.path.join(path, folder, decomp_files_folder, protein_file))
@@ -386,17 +446,17 @@ def combine_channels(df_map, tiles_number,
                                        'composite', 
                                        water_file.split('_channel')[0] + '.tif')
         
-        if not (water_image.shape == protein_image.shape == lipid_image.shape):
-            raise ValueError(f"Shape mismatch for file {protein_file} in {folder}")
+        # if not (water_image.shape == protein_image.shape == lipid_image.shape):
+        #     raise ValueError(f"Shape mismatch for file {protein_file} in {folder}")
         
         channels = [protein_image, lipid_image, water_image]
-        if len(protein_image.shape)==2:
-            axes = "CYX" # if 2D
-        else:
-            axes = "CZYX" # if 3D
+        # if len(protein_image.shape)==2:
+        #     axes = "CYX" # if 2D
+        # else:
+        #     axes = "ZCYX" # if 3D
         
         # Save multi-channel composite as OME-TIFF (C,Z,Y,X), float32, units ~0..1000
-        save_ome_tif(out_composite, channels, axes=axes)
+        save_ome_tif(out_composite, channels)
         # Save RGB drawing (protein→R, lipid→G, water→B)
         rgb = to_uint8_rgb(protein_image, lipid_image, water_image)  # (Z,Y,X,3)
         # If multiple Z-slices, write an ImageJ-compatible stack of RGB pages
@@ -499,9 +559,6 @@ def find_stiching_map(all_prot_images, poss_comb, shift):
     y = res['y'].max()  
     shift = res['shift'].max()
     return x, y, shift
-
-import numpy as np
-import cv2
 
 def blend_distance_feather(img1, img2, mask1=None, mask2=None, eps=1e-6, power=1.0):
     """

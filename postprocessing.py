@@ -38,7 +38,13 @@ def start(data, notify):
     Launch postprocessing of NORI images
     """
     # create imagej session
-    ij = get_ij()
+    os.environ["JAVA_HOME"] = r"C:\Program Files\Eclipse Adoptium\jdk-21.0.8.9-hotspot"
+    os.environ["PATH"] = os.environ["JAVA_HOME"] + r"\bin;" + os.environ["PATH"]
+    try:
+        ij = imagej.init('sc.fiji:fiji', mode="headless")
+    except:
+        pass
+    # ij = get_ij()
 
     # input parameters
     # data_folder = r"\NoRI\Masha\20241120 Ageing Atlas 9mo"
@@ -74,6 +80,7 @@ def start(data, notify):
     path_stitched = os.path.join(drive_letter + stitched_files_folder)
 
     # Calibration data
+    notify(f"Load calibration data")
     # Compute dark noize
     bg_file_path = os.path.join(calibration_folder, 'cal_linpol1', 'signalX', 'bg.tif')
     imbg = tiff.imread(bg_file_path)
@@ -241,6 +248,7 @@ def start(data, notify):
         all_decomp_files = os.listdir(os.path.join(path, folder, decomp_files_folder))
         samples = find_decomp_files(all_decomp_files,
                                     file_separator)
+        print(samples)
 
         # Combine all files
         notify(f"Joining and stitching tiles of {folder} folder")
@@ -248,36 +256,38 @@ def start(data, notify):
             df_name = samples[samples['sample_name']==sample_name]
             for map_name in pd.unique(df_name['map_name']):
                 df_map = df_name[df_name['map_name']==map_name]
-                tiles_number = df_map['tile_id'].max()
-                poss_comb = possible_stitching_combinations[tiles_number]
-
+                # tiles_number = df_map['tile_id'].max()
+                tiles_ids = np.sort(pd.unique(df_map['tile_id']))
+                
+                poss_comb = possible_stitching_combinations[len(tiles_ids)]
 
                 (file_names, 
                 all_prot_images, 
                 all_lipid_images, 
-                all_water_images) = combine_channels(df_map, tiles_number, 
+                all_water_images) = combine_channels(df_map, tiles_ids, 
                                                 strp, strl, strw, 
                                                 path, folder, decomp_files_folder)
 
-                # Compute constant shift
-                tile_size = all_prot_images[0].shape
-                tile_size = (3, tile_size[0], tile_size[1])
-                shift = int(tile_size[1]*0.05)
+                if len(all_prot_images[0].shape)==2:
+                    # Compute constant shift
+                    tile_size = all_prot_images[0].shape
+                    tile_size = (3, tile_size[0], tile_size[1])
+                    shift = int(tile_size[1]*0.05)
 
-                x, y, shift = find_stiching_map(all_prot_images, poss_comb, shift)
-                print(sample_name, map_name, x, y, shift)
+                    x, y, shift = find_stiching_map(all_prot_images, poss_comb, shift)
+                    print(sample_name, map_name, x, y, shift)
 
-                # Stitch all tiles to one image
-                tiles_stitching(all_if_files,
-                                sample_name,
-                                map_name,
-                                x, 
-                                y, 
-                                shift, 
-                                path, 
-                                folder, 
-                                decomp_files_folder,
-                                path_stitched,
-                                file_separator,
-                                tile_size)
+                    # Stitch all tiles to one image
+                    tiles_stitching(all_if_files,
+                                    sample_name,
+                                    map_name,
+                                    x, 
+                                    y, 
+                                    shift, 
+                                    path, 
+                                    folder, 
+                                    decomp_files_folder,
+                                    path_stitched,
+                                    file_separator,
+                                    tile_size)
                 

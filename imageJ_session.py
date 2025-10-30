@@ -1,10 +1,9 @@
 # imagej_session.py
 import os, threading, jpype
 
-# Set Java 11 BEFORE importing imagej / starting JVM
-JAVA11 = r"C:\Program Files\Eclipse Adoptium\jdk-11.0.24.8-hotspot"
-os.environ.setdefault("JAVA_HOME", JAVA11)
-os.environ.setdefault("PATH", JAVA11 + r"\bin;" + os.environ.get("PATH", ""))
+JAVA_HOME = r"C:\Program Files\Eclipse Adoptium\jdk-11.0.24.8-hotspot"
+os.environ["JAVA_HOME"] = JAVA_HOME
+os.environ["PATH"] = JAVA_HOME + r"\bin;" + os.environ["PATH"]
 
 _init_lock = threading.Lock()
 _ij = None
