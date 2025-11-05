@@ -26,8 +26,13 @@ from scipy.ndimage import shift as imshift
 
 # Dict to correct flourescence shift error
 fluorescence_shift_dict = {}
+fluorescence_shift_dict[256] = (3, -0.5)
 fluorescence_shift_dict[512] = (7, -4)
-fluorescence_shift_dict[1024] = (29, -26)
+fluorescence_shift_dict[640] = (8, -6.5)
+fluorescence_shift_dict[800] = (10, -10)
+fluorescence_shift_dict[1024] = (12, -11)
+fluorescence_shift_dict[2048] = (27, -30)
+fluorescence_shift_dict[4096] = (45, -65)
 
 def crop_zoom(IM, zoom):
     """
@@ -750,3 +755,172 @@ def tiles_stitching(all_if_files,
             imagej=True,
             metadata={'axes': 'CYX'}
         ) 
+
+def shift_compute(image_a, image_b, images, x_i, y_i):
+    # tile_shifts = []
+    all_res = []
+    for step in range(4, len(images)-4):
+        res = []
+        for shift_i in (range(50)):
+            for shift_j in range(image_a.shape[2]-50, image_a.shape[2]-10):
+                image_a_step = image_a[step][shift_i:, shift_j:]
+                if (shift_i==0) & (shift_j==0):
+                    image_b_step = image_b[step]
+                elif shift_j==0:
+                    image_b_step = image_b[step][:-shift_i, :]
+                elif shift_i==0:
+                    image_b_step = image_b[step][:, :-shift_j]
+                else:
+                    image_b_step = image_b[step][:-shift_i, :-shift_j]
+                dist = np.corrcoef(image_a_step.reshape(-1), image_b_step.reshape(-1)).min()
+                res.append([shift_i, shift_j, dist])
+    
+        for shift_i in (range(image_a.shape[1]-50, image_a.shape[1]-10)):
+            for shift_j in range(50):
+                image_a_step = image_a[step][shift_i:, shift_j:]
+                if (shift_i==0) & (shift_j==0):
+                    image_b_step = image_b[step]
+                elif shift_j==0:
+                    image_b_step = image_b[step][:-shift_i, :]
+                elif shift_i==0:
+                    image_b_step = image_b[step][:, :-shift_j]
+                else:
+                    image_b_step = image_b[step][:-shift_i, :-shift_j]
+                dist = np.corrcoef(image_a_step.reshape(-1), image_b_step.reshape(-1)).min()
+                res.append([shift_i, shift_j, dist])
+                # break
+            # break
+        res = pd.DataFrame(res, columns=('shift_i', 'shift_j', 'dist')).sort_values(by=['dist'], ascending=False)
+        res = pd.DataFrame(res, columns=('shift_i', 'shift_j', 'dist')).sort_values(by=['dist'], ascending=False)
+        shift_i = res.iloc[0]['shift_i']
+        shift_j = res.iloc[0]['shift_j']
+        dist = res.iloc[0]['dist']
+        all_res.append([step, shift_i, shift_j, dist])
+    all_res = pd.DataFrame(all_res, columns=('step', 'shift_i', 'shift_j', 'dist')).sort_values(by=['dist'], ascending=False)
+    shift_i = np.median(all_res['shift_i'].iloc[0:1])
+    shift_j = np.median(all_res['shift_j'].iloc[0:1])
+    # tile_shifts.append([x_i, y_i, shift_i, shift_j])
+    # print(all_res)
+    return [x_i, y_i, shift_i, shift_j]
+
+def blend_distance_feather(img1, img2, mask1=None, mask2=None, eps=1e-6, power=1.0):
+    """
+    Realistic feathering using distance transforms.
+    - Weights increase with distance from each tile's boundary.
+    - 'power' > 1 sharpens the transition; < 1 softens it.
+
+    img1, img2: HxW or HxWxC, same dtype/shape.
+    mask1, mask2: uint8/bool masks of valid data (1/True where valid). If None, uses >0.
+
+    Returns: blended image (same dtype).
+    """
+    f32 = np.float32
+    a = np.asarray(img1, dtype=f32)
+    b = np.asarray(img2, dtype=f32)
+    H, W = a.shape[:2]
+
+    if mask1 is None:
+        mask1 = (a > 0).any(axis=-1) if a.ndim == 3 else (a > 0)
+    if mask2 is None:
+        mask2 = (b > 0).any(axis=-1) if b.ndim == 3 else (b > 0)
+
+    # Distance to the nearest zero (edge) *inside* the valid region
+    d1 = cv2.distanceTransform((mask1.astype(np.uint8))*255, cv2.DIST_L2, 3)
+    d2 = cv2.distanceTransform((mask2.astype(np.uint8))*255, cv2.DIST_L2, 3)
+
+    # Only consider places where at least one image is valid
+    union = (mask1 | mask2)
+    d1 = d1 ** power
+    d2 = d2 ** power
+    w1 = d1 / (d1 + d2 + eps)
+    w2 = 1.0 - w1
+
+    # Where only one is valid, make that weight 1
+    w1[mask1 & ~mask2] = 1.0
+    w2[mask1 & ~mask2] = 0.0
+    w1[~mask1 & mask2] = 0.0
+    w2[~mask1 & mask2] = 1.0
+    w1[~union] = 0.0
+    w2[~union] = 0.0
+
+    if a.ndim == 3:
+        w1 = w1[..., None]; w2 = w2[..., None]
+
+    out = a * w1 + b * w2
+    return out.astype(img1.dtype)
+
+def file_stitching_3D(path,
+                      folder,
+                      decomp_files_folder, 
+                      path_stitched, 
+                      sample_name, 
+                      map_name):
+    all_files = []
+    composite_dir = os.path.join(path, folder, decomp_files_folder, 'composite')
+    files = np.sort(os.listdir(composite_dir))
+    for file in files:
+        if ('_drawing' not in file) & ('Zone.Identifier' not in file):
+            all_files.append(file)
+    max_x = int(all_files[-1].split('_x')[1].split('_')[0])
+    max_y = int(all_files[-1].split('_y')[1].split('.')[0])
+    test_image = tiff.imread(os.path.join(path, folder, decomp_files_folder, 'composite', all_files[0]))
+    layers_number = test_image.shape[0]
+    image_shape = (test_image.shape[2], test_image.shape[3])
+    prefix = '_'.join(all_files[0].split('_')[:-2]) + '_'
+
+    coords_dict = {}
+    prev_x = -1
+    prev_y = -1
+    for x_i in range(1, max_x+1):
+        for y_i in range(1, max_y+1):
+            if (x_i==1) & (y_i==1):
+                prev_x = x_i
+                prev_y = y_i
+                coords_dict[(1, 1)] = [0, 0]
+            else:
+                start_file = f'{prefix}x{prev_x}_y{prev_y}.tif'
+                image_a = tiff.imread(os.path.join(path, folder, decomp_files_folder, 'composite', start_file))
+                images = image_a.copy()
+                image_a = image_a[:, 0, :, :]
+                file_name_next = f'{prefix}x{x_i}_y{y_i}.tif'
+                image_b = tiff.imread(os.path.join(path, folder, decomp_files_folder, 'composite', file_name_next))
+                image_b = image_b[:, 0, :, :]
+                shift = shift_compute(image_a, image_b, images, x_i, y_i)
+                shift_y = shift[2]
+                shift_x = shift[3]
+                prev_coords = coords_dict[(prev_x, prev_y)]
+                new_coord = [int(prev_coords[0]+shift_x), int(prev_coords[1]+shift_y)]
+                coords_dict[(x_i, y_i)] = new_coord
+                prev_x = x_i
+                prev_y = y_i
+                if prev_y==max_y:
+                    prev_x = x_i
+                    prev_y = 1
+    shape_x = np.array(list(coords_dict.values())).T[0].max() + image_shape[1]
+    shape_y = np.array(list(coords_dict.values())).T[1].max() + image_shape[0]
+
+    all_nori_layers = []
+    for nori_layer in range(2):
+        new_image = np.zeros((layers_number, shape_y, shape_x)).astype('uint16')
+        for x_i in range(1, max_x+1):
+            for y_i in range(1, max_y+1):
+                file_name_next = f'{prefix}x{x_i}_y{y_i}.tif'
+                image_b = tiff.imread(os.path.join(path, folder, decomp_files_folder, 'composite', file_name_next))
+                image_b = image_b[:, nori_layer, :, :]
+                coords = coords_dict[(x_i, y_i)]
+                shape = image_b[0].shape
+                image_crop = new_image[:, coords[1]:coords[1]+shape[0], coords[0]:coords[0]+shape[1]] 
+                for layer in range(layers_number):
+                    blended_im = blend_distance_feather(image_crop[layer], image_b[layer], eps=1e-6, power=0.01)
+                    new_image[layer, coords[1]:coords[1]+shape[0], coords[0]:coords[0]+shape[1]] = blended_im
+        all_nori_layers.append(new_image)
+    all_nori_layers = np.stack(all_nori_layers)
+    all_nori_layers = np.transpose(all_nori_layers, (1, 0, 2, 3))
+
+    out_stitched  = os.path.join(path_stitched, sample_name + '_MAP' + map_name + '.tif')
+    tiff.imwrite(
+        out_stitched,
+        all_nori_layers,
+        bigtiff=True,
+        compression='zstd'
+    ) 

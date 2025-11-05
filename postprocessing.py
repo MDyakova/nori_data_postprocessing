@@ -30,7 +30,8 @@ from utilities import (intensity_flat_field_mask,
                        find_decomp_files,
                        combine_channels,
                        find_stiching_map,
-                       tiles_stitching)
+                       tiles_stitching,
+                       file_stitching_3D)
 from imagej_session import get_ij
 
 def start(data, notify):
@@ -201,9 +202,8 @@ def start(data, notify):
                     # check if IF file
                     if '_IF_' in oir_file:
                         all_if_files.append(oir_file.replace('.oir', '.tif'))
-
                     # Match nori channels
-                    if '_NORI_' in file_name:
+                    if '_NORI_' in oir_file.split('\\')[-2]:
                         immask_channel, renamed_file = match_channels(image_np, 
                                                                         oir_file, 
                                                                         file_name, 
@@ -248,7 +248,6 @@ def start(data, notify):
         all_decomp_files = os.listdir(os.path.join(path, folder, decomp_files_folder))
         samples = find_decomp_files(all_decomp_files,
                                     file_separator)
-        print(samples)
 
         # Combine all files
         notify(f"Joining and stitching tiles of {folder} folder")
@@ -290,4 +289,10 @@ def start(data, notify):
                                     path_stitched,
                                     file_separator,
                                     tile_size)
-                
+                elif len(all_prot_images[0].shape)==3:
+                    file_stitching_3D(path,
+                                    folder,
+                                    decomp_files_folder, 
+                                    path_stitched, 
+                                    sample_name, 
+                                    map_name)
