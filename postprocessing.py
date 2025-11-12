@@ -30,7 +30,8 @@ from utilities import (intensity_flat_field_mask,
                        find_decomp_files,
                        combine_channels,
                        find_stiching_map,
-                       tiles_stitching)
+                       tiles_stitching,
+                       file_stitching_3D)
 from imagej_session import get_ij
 
 def start(data, notify):
@@ -38,20 +39,20 @@ def start(data, notify):
     Launch postprocessing of NORI images
     """
     # create imagej session
-    ij = get_ij()
+    os.environ["JAVA_HOME"] = r"C:\Program Files\Eclipse Adoptium\jdk-21.0.8.9-hotspot"
+    os.environ["PATH"] = os.environ["JAVA_HOME"] + r"\bin;" + os.environ["PATH"]
+    try:
+        ij = imagej.init('sc.fiji:fiji', mode="headless")
+    except:
+        pass
 
     # input parameters
-    # data_folder = r"\NoRI\Masha\20241120 Ageing Atlas 9mo"
     data_folder = data['data_folder']
-    # stitched_files_folder = r"\NoRI\Masha\Stitched"
     stitched_files_folder = data['stitched_files_folder']
-    # powersetting='UP'
     powersetting = data['powersetting']
-    # file_separator = '_MAP'
     file_separator = data['file_separator']
-    # drive_letter = "Z:"
+    subfolder_suffix = data['subfolder_suffix']
     drive_letter = data['drive_letter']
-    # network_path = r"\\research.files.med.harvard.edu\Sysbio"
     network_path = data['network_path']
     calibration_directories = data['calibration_directories']
     calibration_folder_name = data['calibration_folder']
@@ -59,11 +60,12 @@ def start(data, notify):
     folders = data['selected_folders']
 
     # Dependent varibles
-    rename_files_folder = 'signalX_test'
-    bg_files_folder = 'signal_bg_test'
+    if subfolder_suffix!='':
+        subfolder_suffix = '_' + subfolder_suffix
+    rename_files_folder = f'signalX{subfolder_suffix}'
+    bg_files_folder = f'signal_bg{subfolder_suffix}'
     ffc_files_folder = bg_files_folder + '_ffc2'
-    decomp_files_folder = 'decomp_bg_ffc2_test'
-    # nori_channels_folder = os.path.join(decomp_files_folder, "composite")
+    decomp_files_folder = f'decomp_bg_ffc2{subfolder_suffix}'
     OIR_EXT = "*.oir"
     decomp_m_filename = 'M_bgffc2_linpol1.mat'
 
@@ -74,6 +76,7 @@ def start(data, notify):
     path_stitched = os.path.join(drive_letter + stitched_files_folder)
 
     # Calibration data
+    notify(f"Load calibration data")
     # Compute dark noize
     bg_file_path = os.path.join(calibration_folder, 'cal_linpol1', 'signalX', 'bg.tif')
     imbg = tiff.imread(bg_file_path)
@@ -194,9 +197,8 @@ def start(data, notify):
                     # check if IF file
                     if '_IF_' in oir_file:
                         all_if_files.append(oir_file.replace('.oir', '.tif'))
-
                     # Match nori channels
-                    if '_NORI_' in file_name:
+                    if '_NORI_' in oir_file.split('\\')[-2]:
                         immask_channel, renamed_file = match_channels(image_np, 
                                                                         oir_file, 
                                                                         file_name, 
@@ -248,36 +250,46 @@ def start(data, notify):
             df_name = samples[samples['sample_name']==sample_name]
             for map_name in pd.unique(df_name['map_name']):
                 df_map = df_name[df_name['map_name']==map_name]
-                tiles_number = df_map['tile_id'].max()
-                poss_comb = possible_stitching_combinations[tiles_number]
-
+                # tiles_number = df_map['tile_id'].max()
+                tiles_ids = np.sort(pd.unique(df_map['tile_id']))
+                
+                poss_comb = possible_stitching_combinations[len(tiles_ids)]
 
                 (file_names, 
                 all_prot_images, 
                 all_lipid_images, 
-                all_water_images) = combine_channels(df_map, tiles_number, 
+                all_water_images) = combine_channels(df_map, tiles_ids, 
                                                 strp, strl, strw, 
                                                 path, folder, decomp_files_folder)
 
-                # Compute constant shift
-                tile_size = all_prot_images[0].shape
-                tile_size = (3, tile_size[0], tile_size[1])
-                shift = int(tile_size[1]*0.05)
+                if len(all_prot_images[0].shape)==2:
+                    # Compute constant shift
+                    tile_size = all_prot_images[0].shape
+                    tile_size = (3, tile_size[0], tile_size[1])
+                    shift = int(tile_size[1]*0.05)
 
-                x, y, shift = find_stiching_map(all_prot_images, poss_comb, shift)
-                print(sample_name, map_name, x, y, shift)
+                    x, y, shift = find_stiching_map(all_prot_images, poss_comb, shift)
+                    print(sample_name, map_name, x, y, shift)
 
-                # Stitch all tiles to one image
-                tiles_stitching(all_if_files,
-                                sample_name,
-                                map_name,
-                                x, 
-                                y, 
-                                shift, 
-                                path, 
-                                folder, 
-                                decomp_files_folder,
-                                path_stitched,
-                                file_separator,
-                                tile_size)
-                
+                    # Stitch all tiles to one image
+                    tiles_stitching(all_if_files,
+                                    sample_name,
+                                    map_name,
+                                    x, 
+                                    y, 
+                                    shift, 
+                                    path, 
+                                    folder, 
+                                    decomp_files_folder,
+                                    path_stitched,
+                                    file_separator,
+                                    tile_size)
+                elif len(all_prot_images[0].shape)==3:
+                    file_stitching_3D(path,
+                                    folder,
+                                    decomp_files_folder, 
+                                    path_stitched, 
+                                    sample_name, 
+                                    map_name,
+                                    all_if_files,
+                                    file_separator)

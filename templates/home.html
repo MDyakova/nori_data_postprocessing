@@ -78,6 +78,10 @@
           <label for="powersetting">Power Setting</label>
           <input type="text" id="powersetting" name="powersetting" value="{{ defaults.powersetting }}">
         </div>
+        <div class="field">
+          <label for="subfolder_suffix">Subfolder suffix</label>
+          <input type="text" id="subfolder_suffix" name="subfolder_suffix" value="{{ defaults.subfolder_suffix }}">
+        </div>
         <div class="field full">
           <button class="primary" type="submit">Start postprocessing of NORI images.</button>
           <button class="ghost" type="button" id="refresh-cal">Refresh settings</button>
@@ -89,7 +93,7 @@
       <div class="field full">
         <label>Processing Log</label>
         <textarea id="log" rows="12"
-          style="width:100%;background:#0a1125;color:#c9d6ff;border:1px solid #1c2747;border-radius:12px;padding:10px;font-family:ui-monospace,Menlo,Consolas"
+          style="width:98%;background:#0a1125;color:#c9d6ff;border:1px solid #1c2747;border-radius:12px;padding:10px;font-family:ui-monospace,Menlo,Consolas"
           readonly></textarea>
       </div>
     </form>

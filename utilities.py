@@ -26,8 +26,13 @@ from scipy.ndimage import shift as imshift
 
 # Dict to correct flourescence shift error
 fluorescence_shift_dict = {}
+fluorescence_shift_dict[256] = (3, -1)
 fluorescence_shift_dict[512] = (7, -4)
-fluorescence_shift_dict[1024] = (29, -26)
+fluorescence_shift_dict[640] = (8, -7)
+fluorescence_shift_dict[800] = (10, -10)
+fluorescence_shift_dict[1024] = (12, -11)
+fluorescence_shift_dict[2048] = (27, -30)
+fluorescence_shift_dict[4096] = (45, -65)
 
 def crop_zoom(IM, zoom):
     """
@@ -139,17 +144,30 @@ def match_channels(image_np, oir_file, file_name, masks, path, folder, rename_fi
     """
     Match nori channels and return flat fiels correction mask
     """
-    if '_Cycle_02\\' in oir_file:
-        renamed_file = file_name + '_channel_waterUP.tif'
-        immask_channel = masks[f'water_{str(image_np.values.shape[0])}']
-    elif '_Cycle_01\\' in oir_file:
-        renamed_file = file_name + '_channel_lipidUP.tif'
-        immask_channel = masks[f'lipid_{str(image_np.values.shape[0])}']
-    elif '_Cycle\\' in oir_file:
-        renamed_file = file_name + '_channel_proteinUP.tif'
-        immask_channel = masks[f'protein_{str(image_np.values.shape[0])}']
-    else:
-        immask_channel = None
+    if len(image_np.values.shape)==2:
+        if '_Cycle_02\\' in oir_file:
+            renamed_file = file_name + '_channel_waterUP.tif'
+            immask_channel = masks[f'water_{str(image_np.values.shape[0])}']
+        elif '_Cycle_01\\' in oir_file:
+            renamed_file = file_name + '_channel_lipidUP.tif'
+            immask_channel = masks[f'lipid_{str(image_np.values.shape[0])}']
+        elif '_Cycle\\' in oir_file:
+            renamed_file = file_name + '_channel_proteinUP.tif'
+            immask_channel = masks[f'protein_{str(image_np.values.shape[0])}']
+        else:
+            immask_channel = None
+    elif len(image_np.values.shape)==4:
+        if '_Cycle_02\\' in oir_file:
+            renamed_file = file_name + '_channel_waterUP.tif'
+            immask_channel = masks[f'water_{str(image_np.values.shape[1])}']
+        elif '_Cycle_01\\' in oir_file:
+            renamed_file = file_name + '_channel_lipidUP.tif'
+            immask_channel = masks[f'lipid_{str(image_np.values.shape[1])}']
+        elif '_Cycle\\' in oir_file:
+            renamed_file = file_name + '_channel_proteinUP.tif'
+            immask_channel = masks[f'protein_{str(image_np.values.shape[1])}']
+        else:
+            immask_channel = None
 
     file_path = os.path.join(path, folder, rename_files_folder, renamed_file)
     tiff.imwrite(file_path, image_np.astype('float32'))
@@ -183,22 +201,17 @@ def flat_field_correction(imout,
     """
     if len(imout.shape)==2:
         if imout.shape[0]==imout.shape[1]:
-            # if imout.shape == immask_channel.shape:
             imffc = imout / immask_channel
-            # else:
-            #     resized = cv2.resize(immask_channel, imout.shape, interpolation=cv2.INTER_LINEAR)
-            #     imffc = imout / resized
         else:
             return None
-    else:
+    elif len(imout.shape)==4:
         if imout.shape[1]==imout.shape[2]:
-            mask = np.repeat(immask_channel[:, :, np.newaxis], imout.shape[2], axis=2)
-            imffc = imout / mask
+            if imout.shape[1:3] == immask_channel.shape:
+                imffc = imout[:, :, :, 0] / immask_channel
         else:
             return None
     tiff.imwrite(os.path.join(path, folder, ffc_files_folder, renamed_file), imffc.astype('float32'))
-    
-    return 
+    return imffc
 
 def decomposition(water_file, decomp_matrix,
                   unitconversion, DECOMP_CONVERSION_FACTOR,
@@ -219,52 +232,90 @@ def decomposition(water_file, decomp_matrix,
         protein_im = tiff.imread(os.path.join(path, folder, ffc_files_folder, protein_file)).astype('float32')
         lipid_im = tiff.imread(os.path.join(path, folder, ffc_files_folder, lipid_file)).astype('float32')
         water_im = tiff.imread(os.path.join(path, folder, ffc_files_folder, water_file)).astype('float32')
-        data = np.vstack([
-            lipid_im.ravel(),
-            protein_im.ravel(),
-            water_im.ravel()
-        ])
-        decomp_output = np.matmul(decomp_matrix, data)
-        decomp_output = np.where(decomp_output<0, 0, decomp_output)
-        
-        if normalization_option.lower() == "on":
-            total = np.sum(decomp_output[0:3, :], axis=0) + 1e-6
-        else:
-            total = 100
-    
-        decomp_l = unitconversion[0] * np.reshape(
-            decomp_output[0, :] / total, 
-            lipid_im.shape
-        )
-        decomp_p = unitconversion[1] * np.reshape(
-            decomp_output[1, :] / total, 
-            protein_im.shape
-        )
-        decomp_w = unitconversion[2] * np.reshape(
-            decomp_output[2, :] / total, 
-            water_im.shape
-        )
-        decomp_p = (DECOMP_CONVERSION_FACTOR*decomp_p).astype('float32')
-        decomp_l = (DECOMP_CONVERSION_FACTOR*decomp_l).astype('float32')
-        decomp_w = (DECOMP_CONVERSION_FACTOR*decomp_w).astype('float32')
 
-        # decomp_p = np.where(decomp_p<0, 0, decomp_p)
-        # decomp_l = np.where(decomp_l<0, 0, decomp_l)
-        # decomp_w = np.where(decomp_w<0, 0, decomp_w)
-    
-        tiff.imwrite(os.path.join(path, folder, decomp_files_folder, protein_file), decomp_p)
-        tiff.imwrite(os.path.join(path, folder, decomp_files_folder, lipid_file), decomp_l)
-        tiff.imwrite(os.path.join(path, folder, decomp_files_folder, water_file), decomp_w)
-        # if decomp_output.shape[0] == 4:
-        #     decomp_w = unitconversion[2] * np.reshape(
-        #         decomp_output[3, :] / total, 
-        #         water_im.shape
-        #     )
-        #     decomp_m = (DECOMP_CONVERSION_FACTOR*decomp_m).astype('float32')
-        # else:
-        #     decomp_m = np.NaN
-    
-        # # nosignal = ((lipid_im + protein_im + water_im) == 0)
+        if len(protein_im.shape)==2:
+            data = np.vstack([
+                lipid_im.ravel(),
+                protein_im.ravel(),
+                water_im.ravel()
+            ])
+            decomp_output = np.matmul(decomp_matrix, data)
+            decomp_output = np.where(decomp_output<0, 0, decomp_output)
+            
+            if normalization_option.lower() == "on":
+                total = np.sum(decomp_output[0:3, :], axis=0) + 1e-6
+            else:
+                total = 100
+        
+            decomp_l = unitconversion[0] * np.reshape(
+                decomp_output[0, :] / total, 
+                lipid_im.shape
+            )
+            decomp_p = unitconversion[1] * np.reshape(
+                decomp_output[1, :] / total, 
+                protein_im.shape
+            )
+            decomp_w = unitconversion[2] * np.reshape(
+                decomp_output[2, :] / total, 
+                water_im.shape
+            )
+            decomp_p = (DECOMP_CONVERSION_FACTOR*decomp_p).astype('float32')
+            decomp_l = (DECOMP_CONVERSION_FACTOR*decomp_l).astype('float32')
+            decomp_w = (DECOMP_CONVERSION_FACTOR*decomp_w).astype('float32')
+
+            # decomp_p = np.where(decomp_p<0, 0, decomp_p)
+            # decomp_l = np.where(decomp_l<0, 0, decomp_l)
+            # decomp_w = np.where(decomp_w<0, 0, decomp_w)
+        
+            tiff.imwrite(os.path.join(path, folder, decomp_files_folder, protein_file), decomp_p)
+            tiff.imwrite(os.path.join(path, folder, decomp_files_folder, lipid_file), decomp_l)
+            tiff.imwrite(os.path.join(path, folder, decomp_files_folder, water_file), decomp_w)
+
+        elif len(protein_im.shape)==3:
+            all_decomp_p = []
+            all_decomp_l = []
+            all_decomp_w = []
+            for step in range(protein_im.shape[0]):
+                protein_im_step = protein_im[step]
+                lipid_im_step = lipid_im[step]
+                water_im_step = water_im[step]
+        
+                data = np.vstack([
+                    lipid_im_step.ravel(),
+                    protein_im_step.ravel(),
+                    water_im_step.ravel()
+                ])
+                decomp_output = np.matmul(decomp_matrix, data)
+                decomp_output = np.where(decomp_output<0, 0, decomp_output)
+                
+                if normalization_option.lower() == "on":
+                    total = np.sum(decomp_output[0:3, :], axis=0) + 1e-6
+                else:
+                    total = 100
+            
+                decomp_l = unitconversion[0] * np.reshape(
+                    decomp_output[0, :] / total, 
+                    lipid_im_step.shape
+                )
+                decomp_p = unitconversion[1] * np.reshape(
+                    decomp_output[1, :] / total, 
+                    protein_im_step.shape
+                )
+                decomp_w = unitconversion[2] * np.reshape(
+                    decomp_output[2, :] / total, 
+                    water_im_step.shape
+                )
+                decomp_p = (DECOMP_CONVERSION_FACTOR*decomp_p).astype('float32')
+                decomp_l = (DECOMP_CONVERSION_FACTOR*decomp_l).astype('float32')
+                decomp_w = (DECOMP_CONVERSION_FACTOR*decomp_w).astype('float32')
+        
+                all_decomp_p.append(decomp_p)
+                all_decomp_l.append(decomp_l)
+                all_decomp_w.append(decomp_w)
+                
+            tiff.imwrite(os.path.join(path, folder, decomp_files_folder, protein_file), all_decomp_p)
+            tiff.imwrite(os.path.join(path, folder, decomp_files_folder, lipid_file), all_decomp_l)
+            tiff.imwrite(os.path.join(path, folder, decomp_files_folder, water_file), all_decomp_w)
         
         sio.savemat(os.path.join(path, folder, decomp_files_folder, 'M.mat'), {"M": decomp_matrix_save})   
         log_path = os.path.join(path, folder, decomp_files_folder, "note.txt")
@@ -299,7 +350,10 @@ def find_decomp_files(all_decomp_files,
         if ('.tif' in file) & ('Zone.Identifier' not in file):
             sample_name = file.split(file_separator)[0]
             map_name = file.split(file_separator)[1].split('_')[0]
-            tile_id = int(file.split('_channel')[0].split('_')[-1])
+            if ('_x' in file) & ('_y' in file):
+                tile_id = '_'.join(file.split('_channel')[0].split(file_separator)[-1].split('_')[1:])
+            else:
+                tile_id = int(file.split('_channel')[0].split('_')[-1])
             samples.append([file, sample_name, map_name, tile_id])
     samples = pd.DataFrame(samples, columns=('file', 'sample_name', 'map_name', 'tile_id'))
     return samples
@@ -309,21 +363,32 @@ def clip_inplace(a, lo, hi):
     np.clip(a, lo, hi, out=a)
     return a
 
-def save_ome_tif(path, channels, axes="CZYX"):
+def save_ome_tif(path, channels, axes="ZCYX"):
     """
     channels: list of (Z,Y,X) float32 arrays in calibrated units.
     Saves as float32 OME-TIFF with given axes.
     """
-    data = np.stack(channels, axis=0)  # (C,Z,Y,X)
-    metadata = {'axes': axes}
-    tiff.imwrite(
-        str(path),
-        data,
-        dtype=np.float32,
-        photometric='minisblack',
-        metadata=metadata,
-        imagej=False
-    )
+    if len(channels[0].shape)==2:
+        data = np.stack(channels, axis=0)  # (C,Y,X)
+        metadata = {'axes': 'CYX'}
+        tiff.imwrite(
+            str(path),
+            data,
+            dtype=np.float32,
+            photometric='minisblack',
+            metadata=metadata,
+            imagej=False
+        )
+    else:
+        data = np.stack(channels, axis=1)  # (Z,C,Y,X)
+        tiff.imwrite(
+            str(path),
+            data.astype(np.float32),
+            photometric='minisblack',
+            # metadata={'axes': 'ZCYX'},
+            metadata={'axes': 'CZYX'},
+            imagej=False
+        )
 
 def to_uint8_rgb(protein, lipid, water):
     """
@@ -341,7 +406,7 @@ def to_uint8_rgb(protein, lipid, water):
     B = (scale01(water)   * 255.0).astype(np.uint8)
     return np.stack([R, G, B], axis=-1)
 
-def combine_channels(df_map, tiles_number, 
+def combine_channels(df_map, tile_ids, 
                      strp, strl, strw, 
                      path, folder, decomp_files_folder):
     """
@@ -351,7 +416,7 @@ def combine_channels(df_map, tiles_number,
     all_lipid_images = []
     all_water_images = []
     file_names = []
-    for tile_id in range(1, tiles_number+1):
+    for tile_id in tile_ids:
         tile_files = list(df_map[df_map['tile_id']==tile_id]['file'])
         protein_file = list(filter(lambda p: strp in p, tile_files))[0]
         protein_image = tiff.imread(os.path.join(path, folder, decomp_files_folder, protein_file))
@@ -386,17 +451,17 @@ def combine_channels(df_map, tiles_number,
                                        'composite', 
                                        water_file.split('_channel')[0] + '.tif')
         
-        if not (water_image.shape == protein_image.shape == lipid_image.shape):
-            raise ValueError(f"Shape mismatch for file {protein_file} in {folder}")
+        # if not (water_image.shape == protein_image.shape == lipid_image.shape):
+        #     raise ValueError(f"Shape mismatch for file {protein_file} in {folder}")
         
         channels = [protein_image, lipid_image, water_image]
-        if len(protein_image.shape)==2:
-            axes = "CYX" # if 2D
-        else:
-            axes = "CZYX" # if 3D
+        # if len(protein_image.shape)==2:
+        #     axes = "CYX" # if 2D
+        # else:
+        #     axes = "ZCYX" # if 3D
         
         # Save multi-channel composite as OME-TIFF (C,Z,Y,X), float32, units ~0..1000
-        save_ome_tif(out_composite, channels, axes=axes)
+        save_ome_tif(out_composite, channels)
         # Save RGB drawing (protein→R, lipid→G, water→B)
         rgb = to_uint8_rgb(protein_image, lipid_image, water_image)  # (Z,Y,X,3)
         # If multiple Z-slices, write an ImageJ-compatible stack of RGB pages
@@ -499,9 +564,6 @@ def find_stiching_map(all_prot_images, poss_comb, shift):
     y = res['y'].max()  
     shift = res['shift'].max()
     return x, y, shift
-
-import numpy as np
-import cv2
 
 def blend_distance_feather(img1, img2, mask1=None, mask2=None, eps=1e-6, power=1.0):
     """
@@ -693,3 +755,221 @@ def tiles_stitching(all_if_files,
             imagej=True,
             metadata={'axes': 'CYX'}
         ) 
+
+def shift_compute(image_a, image_b, images, x_i, y_i, prev_x, prev_y):
+    all_res = []
+    for step in range(4, len(images)-4):
+        res = []
+        if prev_y==y_i:
+            for shift_i in (range(50)):
+                for shift_j in range(image_a.shape[2]-50, image_a.shape[2]-10):
+                    image_a_step = image_a[step][shift_i:, shift_j:]
+                    if (shift_i==0) & (shift_j==0):
+                        image_b_step = image_b[step]
+                    elif shift_j==0:
+                        image_b_step = image_b[step][:-shift_i, :]
+                    elif shift_i==0:
+                        image_b_step = image_b[step][:, :-shift_j]
+                    else:
+                        image_b_step = image_b[step][:-shift_i, :-shift_j]
+                    dist = np.corrcoef(image_a_step.reshape(-1), image_b_step.reshape(-1)).min()
+                    res.append([shift_i, shift_j, dist])
+        else:
+            for shift_i in (range(image_a.shape[1]-50, image_a.shape[1]-10)):
+                for shift_j in range(50):
+                    image_a_step = image_a[step][shift_i:, shift_j:]
+                    if (shift_i==0) & (shift_j==0):
+                        image_b_step = image_b[step]
+                    elif shift_j==0:
+                        image_b_step = image_b[step][:-shift_i, :]
+                    elif shift_i==0:
+                        image_b_step = image_b[step][:, :-shift_j]
+                    else:
+                        image_b_step = image_b[step][:-shift_i, :-shift_j]
+                    dist = np.corrcoef(image_a_step.reshape(-1), image_b_step.reshape(-1)).min()
+                    res.append([shift_i, shift_j, dist])
+        res = pd.DataFrame(res, columns=('shift_i', 'shift_j', 'dist')).sort_values(by=['dist'], ascending=False)
+        shift_i = res.iloc[0]['shift_i']
+        shift_j = res.iloc[0]['shift_j']
+        dist = res.iloc[0]['dist']
+        all_res.append([step, shift_i, shift_j, dist])
+    all_res = pd.DataFrame(all_res, columns=('step', 'shift_i', 'shift_j', 'dist')).sort_values(by=['dist'], ascending=False)
+    shift_i = np.median(all_res['shift_i'].iloc[0:5])
+    shift_j = np.median(all_res['shift_j'].iloc[0:5])
+    return [x_i, y_i, shift_i, shift_j]
+
+def blend_distance_feather(img1, img2, mask1=None, mask2=None, eps=1e-6, power=1.0):
+    """
+    Realistic feathering using distance transforms.
+    - Weights increase with distance from each tile's boundary.
+    - 'power' > 1 sharpens the transition; < 1 softens it.
+
+    img1, img2: HxW or HxWxC, same dtype/shape.
+    mask1, mask2: uint8/bool masks of valid data (1/True where valid). If None, uses >0.
+
+    Returns: blended image (same dtype).
+    """
+    f32 = np.float32
+    a = np.asarray(img1, dtype=f32)
+    b = np.asarray(img2, dtype=f32)
+    H, W = a.shape[:2]
+
+    if mask1 is None:
+        mask1 = (a > 0).any(axis=-1) if a.ndim == 3 else (a > 0)
+    if mask2 is None:
+        mask2 = (b > 0).any(axis=-1) if b.ndim == 3 else (b > 0)
+
+    # Distance to the nearest zero (edge) *inside* the valid region
+    d1 = cv2.distanceTransform((mask1.astype(np.uint8))*255, cv2.DIST_L2, 3)
+    d2 = cv2.distanceTransform((mask2.astype(np.uint8))*255, cv2.DIST_L2, 3)
+
+    # Only consider places where at least one image is valid
+    union = (mask1 | mask2)
+    d1 = d1 ** power
+    d2 = d2 ** power
+    w1 = d1 / (d1 + d2 + eps)
+    w2 = 1.0 - w1
+
+    # Where only one is valid, make that weight 1
+    w1[mask1 & ~mask2] = 1.0
+    w2[mask1 & ~mask2] = 0.0
+    w1[~mask1 & mask2] = 0.0
+    w2[~mask1 & mask2] = 1.0
+    w1[~union] = 0.0
+    w2[~union] = 0.0
+
+    if a.ndim == 3:
+        w1 = w1[..., None]; w2 = w2[..., None]
+
+    out = a * w1 + b * w2
+    return out.astype(img1.dtype)
+
+def file_stitching_3D(path,
+                      folder,
+                      decomp_files_folder, 
+                      path_stitched, 
+                      sample_name, 
+                      map_name,
+                      all_if_files,
+                      file_separator):
+    all_files = []
+    composite_dir = os.path.join(path, folder, decomp_files_folder, 'composite')
+    files = np.sort(os.listdir(composite_dir))
+    for file in files:
+        if (('_drawing' not in file) 
+            & ('Zone.Identifier' not in file)
+            & ('.tif' in file)):
+            all_files.append(file)
+
+    test_image = tiff.imread(os.path.join(path, folder, decomp_files_folder, 'composite', all_files[0]))
+    layers_number = test_image.shape[0]
+    image_shape = (test_image.shape[2], test_image.shape[3])
+    prefix = '_'.join(all_files[0].split('_')[:-2]) + '_'
+
+    max_x = np.max([int(file.split(file_separator)[1].split('_x')[1].split('_')[0]) for file in all_files])
+    max_y = np.max([int(file.split(file_separator)[1].split('_y')[1].split('.')[0]) for file in all_files])
+
+    coords_dict = {}
+    prev_x = -1
+    prev_y = -1
+    for x_i in range(1, max_x+1):
+        for y_i in range(1, max_y+1):
+            if (x_i==1) & (y_i==1):
+                prev_x = x_i
+                prev_y = y_i
+                coords_dict[(1, 1)] = [0, 0]
+            else:
+                start_file = f'{prefix}x{prev_x}_y{prev_y}.tif'
+                image_a = tiff.imread(os.path.join(path, folder, decomp_files_folder, 'composite', start_file))
+                images = image_a.copy()
+                image_a = image_a[:, 0, :, :]
+                file_name_next = f'{prefix}x{x_i}_y{y_i}.tif'
+                image_b = tiff.imread(os.path.join(path, folder, decomp_files_folder, 'composite', file_name_next))
+                image_b = image_b[:, 0, :, :]
+                shift = shift_compute(image_a, image_b, images, x_i, y_i, prev_x, prev_y)
+                shift_y = shift[2]
+                shift_x = shift[3]
+                prev_coords = coords_dict[(prev_x, prev_y)]
+                new_coord = [int(prev_coords[0]+shift_x), int(prev_coords[1]+shift_y)]
+                coords_dict[(x_i, y_i)] = new_coord
+                prev_x = x_i
+                prev_y = y_i
+                if prev_y==max_y:
+                    prev_x = x_i
+                    prev_y = 1
+    shape_x = np.array(list(coords_dict.values())).T[0].max() + image_shape[1]
+    shape_y = np.array(list(coords_dict.values())).T[1].max() + image_shape[0]
+
+    all_nori_layers = []
+    for nori_layer in range(2):
+        new_image = np.zeros((layers_number, shape_y, shape_x)).astype('uint16')
+        for x_i in range(1, max_x+1):
+            for y_i in range(1, max_y+1):
+                file_name_next = f'{prefix}x{x_i}_y{y_i}.tif'
+                image_b = tiff.imread(os.path.join(path, folder, decomp_files_folder, 'composite', file_name_next))
+                image_b = image_b[:, nori_layer, :, :]
+                coords = coords_dict[(x_i, y_i)]
+                shape = image_b[0].shape
+                image_crop = new_image[:, coords[1]:coords[1]+shape[0], coords[0]:coords[0]+shape[1]] 
+                for layer in range(layers_number):
+                    blended_im = blend_distance_feather(image_crop[layer], image_b[layer], eps=1e-6, power=0.01)
+                    # print(file_name_next, layer, blended_im.max())
+                    new_image[layer, coords[1]:coords[1]+shape[0], coords[0]:coords[0]+shape[1]] = blended_im
+        all_nori_layers.append(new_image)
+    all_nori_layers.append(new_image*0)
+    all_nori_layers = np.stack(all_nori_layers)
+
+    if len(all_if_files)==0:
+        all_nori_layers = np.transpose(all_nori_layers, (1, 0, 2, 3))
+        out_stitched  = os.path.join(path_stitched, sample_name + '_MAP' + map_name + '.tif')
+        tiff.imwrite(
+            out_stitched,
+            all_nori_layers,
+            bigtiff=True,
+            compression='zstd',
+            metadata={'axes': 'ZCYX'}
+        )
+    else:
+        # Fluorescent files stitching
+        all_if_layers = []
+        if_file_test_name = all_if_files[0]
+        if_file_test = tiff.imread(if_file_test_name)
+        for if_layer in range(if_file_test.shape[-1]):
+            new_image = np.zeros((layers_number, shape_y, shape_x)).astype('uint16')
+            for x_i in range(1, max_x+1):
+                for y_i in range(1, max_y+1):
+                    file_name_next = f'{prefix}x{x_i}_y{y_i}.tif'
+                    file_name_next = list(filter(lambda p: file_name_next in p, all_if_files))[0]
+                    image_b = tiff.imread(file_name_next)
+                    image_b = image_b[:, :, :, if_layer]
+                    coords = coords_dict[(x_i, y_i)]
+                    shape = image_b[0].shape
+                    image_crop = new_image[:, coords[1]:coords[1]+shape[0], coords[0]:coords[0]+shape[1]] 
+                    for layer in range(layers_number):
+                        blended_im = blend_distance_feather(image_crop[layer], image_b[layer], eps=1e-6, power=0.01)
+                        new_image[layer, coords[1]:coords[1]+shape[0], coords[0]:coords[0]+shape[1]] = blended_im
+            all_if_layers.append(new_image)
+        all_if_layers = np.stack(all_if_layers)
+
+        # Correct flourescence shift
+        tile_size = if_file_test.shape[-2]
+        f_shift = fluorescence_shift_dict[tile_size]
+        shifted_images = []
+        for if_channel in range(all_if_layers.shape[0]):
+            shifted_layers = []
+            for layer in range(all_if_layers.shape[1]):
+                b_aligned = imshift(np.squeeze(all_if_layers[if_channel, layer]), shift=f_shift, order=1, mode='constant', cval=0.0)
+                shifted_layers.append(b_aligned)
+            shifted_images.append(shifted_layers)
+        shifted_images = np.stack(shifted_images)
+        all_images = np.concatenate([all_nori_layers, shifted_images], axis=0)
+        # Save as ImageJ-compatible multi-channel NORI + IF TIFF
+        all_images = np.transpose(all_images, (1, 0, 2, 3))
+        out_stitched  = os.path.join(path_stitched, sample_name + '_MAP' + map_name + '.tif')
+        tiff.imwrite(
+            out_stitched,
+            all_images,
+            bigtiff=True,
+            compression='zstd',
+            metadata={'axes': 'ZCYX'}
+        )
