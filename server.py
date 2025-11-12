@@ -26,6 +26,7 @@ def index():
         'stitched_files_folder': 'NoRI\\Masha\\Stitched',
         'powersetting': 'UP',
         'file_separator': '_MAP',
+        'subfolder_suffix': '',
         'calibration_directories': 'NoRI\\Calibration Archive',
         'network_path': 'research.files.med.harvard.edu\Sysbio'
     }

@@ -45,20 +45,14 @@ def start(data, notify):
         ij = imagej.init('sc.fiji:fiji', mode="headless")
     except:
         pass
-    # ij = get_ij()
 
     # input parameters
-    # data_folder = r"\NoRI\Masha\20241120 Ageing Atlas 9mo"
     data_folder = data['data_folder']
-    # stitched_files_folder = r"\NoRI\Masha\Stitched"
     stitched_files_folder = data['stitched_files_folder']
-    # powersetting='UP'
     powersetting = data['powersetting']
-    # file_separator = '_MAP'
     file_separator = data['file_separator']
-    # drive_letter = "Z:"
+    subfolder_suffix = data['subfolder_suffix']
     drive_letter = data['drive_letter']
-    # network_path = r"\\research.files.med.harvard.edu\Sysbio"
     network_path = data['network_path']
     calibration_directories = data['calibration_directories']
     calibration_folder_name = data['calibration_folder']
@@ -66,11 +60,12 @@ def start(data, notify):
     folders = data['selected_folders']
 
     # Dependent varibles
-    rename_files_folder = 'signalX_test'
-    bg_files_folder = 'signal_bg_test'
+    if subfolder_suffix!='':
+        subfolder_suffix = '_' + subfolder_suffix
+    rename_files_folder = f'signalX{subfolder_suffix}'
+    bg_files_folder = f'signal_bg{subfolder_suffix}'
     ffc_files_folder = bg_files_folder + '_ffc2'
-    decomp_files_folder = 'decomp_bg_ffc2_test'
-    # nori_channels_folder = os.path.join(decomp_files_folder, "composite")
+    decomp_files_folder = f'decomp_bg_ffc2{subfolder_suffix}'
     OIR_EXT = "*.oir"
     decomp_m_filename = 'M_bgffc2_linpol1.mat'
 
@@ -295,4 +290,6 @@ def start(data, notify):
                                     decomp_files_folder, 
                                     path_stitched, 
                                     sample_name, 
-                                    map_name)
+                                    map_name,
+                                    all_if_files,
+                                    file_separator)
