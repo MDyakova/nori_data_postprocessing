@@ -1,5 +1,25 @@
 # **NORI Post-Processing Pipeline**
 
+## 📚 References
+
+### **1. Protein & Lipid Mass Concentration by SRS Microscopy**
+
+**Oh S, Lee C, Yang W, Li A, Mukherjee A, Basan M, Ran C, Yin W, Tabin CJ, Fu D, Xie XS, Kirschner MW.**
+*Protein and lipid mass concentration measurement in tissues by stimulated Raman scattering microscopy.*
+**Proceedings of the National Academy of Sciences** (PNAS), 2022, 119(17): e2117938119.
+[https://doi.org/10.1073/pnas.2117938119](https://doi.org/10.1073/pnas.2117938119)
+
+---
+
+### **2. Normalized Raman Imaging for Kidney Physiology (NoRI)**
+
+**Oh S, Trim WV, Diakova M, Petrova K, Ichimura T, Takakura A, Karmakar R, Nørrelykke SF, Peshkin L, Bonventre JV, Kirschner M.**
+*Normalized Raman Imaging for Studies of Tissue Physiology of the Kidney.*
+**bioRxiv**, 2025.
+[https://doi.org/10.1101/2025.10.12.681746](https://doi.org/10.1101/2025.10.12.681746)
+
+---
+
 # 🚀 Key Features
 
 ### ✔ Convert `.oir` → `.tif`
@@ -202,7 +222,7 @@ This codebase integrates:
 ---
 ## Citation
 
-If you use this toolkit in your research, please cite Cellpose and trackpy as appropriate and reference this repository.
+If you use this toolkit in your research, please cite ImageJ as appropriate and reference this repository.
 
 ---
 ## License
