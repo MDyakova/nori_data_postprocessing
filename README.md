@@ -1,25 +1,4 @@
-Below is a clean **README.md** for your project, fully tailored to the real codebase you uploaded.
-It explains the system architecture, pipeline steps, usage, API endpoints, file structure, and references your actual code files.
-
----
-
 # **NORI Post-Processing Pipeline**
-
-**NORI (Normalized Raman Imaging) Image Post-Processing Toolkit**
-Full pipeline for converting raw `.oir` files into stitched, decomposed, background-corrected, flat-field-corrected, and multi-channel quantitative TIFF images.
-
-This repository contains:
-
-* A **computational backend** that performs all heavy imaging steps (conversion, background subtraction, flat-field correction, spectral decomposition, tile stitching, fluorescence alignment).
-  Source: `postprocessing.py`  and `utilities.py` 
-
-* A **Flask web interface** to configure and run processing jobs with live logging.
-  Source: `server.py` 
-
-* A clean **requirements.txt** with pinned versions for reproducible environments.
-  Source: `requirements.txt` 
-
----
 
 # 🚀 Key Features
 
@@ -73,13 +52,6 @@ Includes:
 ---
 
 # 📦 Installation
-
-Create a virtual environment:
-
-```bash
-python -m venv venv
-source venv/bin/activate   # Windows: venv\Scripts\activate
-```
 
 Install dependencies:
 
@@ -203,45 +175,6 @@ http://127.0.0.1:5000
 
 ---
 
-# 🔌 API Endpoints
-
-### `GET /`
-
-Main UI.
-
-### `GET /api/drives`
-
-Detects available Windows drives.
-
-### `GET /api/calibration-folders`
-
-Lists calibration folders for selected drive.
-
-### `GET /api/data-folders`
-
-Lists NORI data folders.
-
-### `POST /submit`
-
-Starts processing job.
-
-### `POST /stop`
-
-Stops job gracefully.
-
-### `GET /progress`
-
-Returns:
-
-* running state
-* done/error flags
-* progress log
-* stop availability
-
-All implemented in **server.py** .
-
----
-
 # 🧪 Example Output Structure
 
 ```
@@ -255,7 +188,6 @@ All implemented in **server.py** .
             <sample>_MAPX.tif
         <stitched_output>.tif
 ```
-
 ---
 
 # 📬 Acknowledgements
@@ -268,3 +200,20 @@ This codebase integrates:
 * Custom stitching algorithms developed specifically for large NoRI datasets
 
 ---
+## Citation
+
+If you use this toolkit in your research, please cite Cellpose and trackpy as appropriate and reference this repository.
+
+---
+## License
+
+MIT License
+
+---
+
+### 📫 **Contact**
+For questions or contributions, please contact:
+**Mariia Diakova**
+- GitHub: [MDyakova](https://github.com/MDyakova)
+- email: m.dyakova.ml@gmail.com
+
