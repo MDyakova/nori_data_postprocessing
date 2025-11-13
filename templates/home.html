@@ -85,6 +85,7 @@
         <div class="field full">
           <button class="primary" type="submit">Start postprocessing of NORI images.</button>
           <button class="ghost" type="button" id="refresh-cal">Refresh settings</button>
+          <button class="ghost" type="button" id="stop-btn">Stop all processes</button>
         </div>
       </form>
     </div>
@@ -197,6 +198,31 @@
         }
       }
     }, 1000);
+    // --- stop button ---
+    const stopBtn = document.getElementById('stop-btn');
+    if (stopBtn) {
+      stopBtn.addEventListener('click', async () => {
+        stopBtn.disabled = true;
+        const logEl = document.getElementById('log');
+        if (logEl) logEl.value += '\n⏹️ Stop requested by user...\n';
+
+        try {
+          const res = await fetch('/stop', { method: 'POST' });
+          const j = await res.json();
+          if (logEl) {
+            if (j.ok) {
+              logEl.value += '\n❌ ERROR: Stopped by user\n';
+            } else {
+              logEl.value += `\n⚠️ ${j.message}\n`;
+            }
+          }
+        } catch (e) {
+          if (logEl) logEl.value += `\n⚠️ Stop request failed: ${e.message}\n`;
+        } finally {
+          stopBtn.disabled = false;
+        }
+      });
+    }
   }
 
   // --- init ---

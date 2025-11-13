@@ -1,0 +1,9 @@
+flask==3.1.2
+numpy==1.26.4
+scipy==1.15.2
+opencv-python-headless==4.11.0.86
+pandas==2.2.3
+scikit-image==0.20.0
+scikit-learn==1.6.1
+tifffile==2022.4.8
+pyimagej==1.7.0
