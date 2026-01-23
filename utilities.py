@@ -3,11 +3,14 @@ Fuctions for postprocessing.py
 """
 
 import os
+import glob
 from typing import List, Tuple, Iterator
+import shutil
 import numpy as np
 import scipy.io as sio
 import cv2
 import pandas as pd
+import xml.etree.ElementTree as ET
 from skimage.measure import regionprops
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.linear_model import LinearRegression
@@ -1082,8 +1085,9 @@ def file_stitching_3d(
         tiff.imwrite(
             out_stitched,
             all_nori_layers,
-            bigtiff=True,
-            compression="zstd",
+            bigtiff=False,
+            imagej=True, 
+            compression="deflate",
             metadata={"axes": "ZCYX"},
         )
     else:
@@ -1146,7 +1150,242 @@ def file_stitching_3d(
         tiff.imwrite(
             out_stitched,
             all_images,
-            bigtiff=True,
-            compression="zstd",
+            bigtiff=False,
+            imagej=True, 
+            compression="deflate",
             metadata={"axes": "ZCYX"},
         )
+
+def custom_coordinates(xml_path, tile_size, tile_size_mkm=212):
+    """
+    Read custom tile coordinates from an xml file
+    """
+    tree = ET.parse(xml_path)
+    root = tree.getroot()
+    
+    ns = {
+        "matl": "http://www.olympus.co.jp/hpf/protocol/matl/model/matl",
+        "marker": "http://www.olympus.co.jp/hpf/model/marker",
+    }
+    
+    # Overlap (%)
+    overlap = float(root.find(".//matl:stage/matl:overlap", ns).text)
+    pixel_size = tile_size_mkm/tile_size
+    overlap = overlap/pixel_size
+    step_px = int(tile_size - overlap)
+    
+    tiles = []
+    
+    for area in root.findall(".//matl:group/matl:area", ns):
+        try:
+            img_name = area.find("matl:image", ns).text
+            ix = int(area.find("matl:xIndex", ns).text)
+            iy = int(area.find("matl:yIndex", ns).text)
+        
+            x_pixel = round(ix * step_px)
+            y_pixel = round(iy * step_px)
+        
+            tiles.append(
+                {
+                    "image": img_name,
+                    "xIndex": ix,
+                    "yIndex": iy,
+                    "x_pixel": x_pixel,
+                    "y_pixel": y_pixel,
+                }
+            )
+        except:
+            pass
+    return tiles
+
+def file_stitching_custom(
+    path,
+    folder,
+    decomp_files_folder,
+    path_stitched,
+    sample_name,
+    map_name,
+    all_if_files,
+    file_separator,
+    fluorescent_tag,
+    all_prot_images
+):
+    # read file with tile coordinates
+    matl_files = glob.glob(
+        os.path.join(os.path.join(path, folder), "**", '*matl.omp2info'), recursive=True
+    )
+    xml_path = np.sort(list(filter(lambda p: (sample_name in p) & (f'_MAP{map_name}_' in p), matl_files)))[0]
+    
+    tile_size = all_prot_images[0].shape
+    tile_size = (3, tile_size[0], tile_size[1])
+    
+    # get tile coordinates
+    tiles = custom_coordinates(xml_path, tile_size[1], tile_size_mkm=212)
+    tiles = list(filter(lambda p: (sample_name in p['image']) & (f'_MAP{map_name}_' in p['image']), tiles))
+    
+    # whole image shape
+    shape_x = np.max([tile['x_pixel'] for tile in tiles]) + tile_size[1]
+    shape_y = np.max([tile['y_pixel'] for tile in tiles]) + tile_size[1]
+    new_image = np.zeros((tile_size[0], shape_y, shape_x))
+
+    composite_dir = os.path.join(path, folder, decomp_files_folder, "composite")
+    composite_files = os.listdir(composite_dir)
+    composite_files = list(
+        filter(lambda p: ("_drawing" not in p) & (".tif" in p), composite_files)
+    )
+    
+    samples = []
+    for file in composite_files:
+        if ".tif" in file:
+            sample_name_i = file.split(file_separator)[0]
+            map_name_i = file.split(file_separator)[1].split("_")[0]
+            tile_id = int(file.split(".tif")[0].split("_")[-1])
+            samples.append([file, sample_name_i, map_name_i, tile_id])
+    samples = pd.DataFrame(
+        samples, columns=("file", "sample_name", "map_name", "tile_id")
+    )
+    
+    df_name = samples[samples["sample_name"] == sample_name]
+    df_map = df_name[df_name["map_name"] == map_name]
+    df_map.sort_values(by='tile_id', inplace=True)
+
+    for step_a, sample_a in enumerate(df_map['file']):
+        next_im = tiff.imread(os.path.join(path, folder, decomp_files_folder, "composite", sample_a))
+        image_shape = next_im.shape
+        oir_file = sample_a.replace('.tif', '.oir')
+        res = [i for i in tiles if i['image']==oir_file][0]
+        x_p = res['x_pixel']
+        y_p = res['y_pixel']
+        
+        new_image_mask = np.zeros((shape_y, shape_x))
+    
+        for layer in range(tile_size[0]):
+            new_image_mask[
+                y_p:y_p+image_shape[1], x_p:x_p+image_shape[2]
+            ] = next_im[layer]
+            new_image[layer] = blend_distance_feather(
+                new_image[layer], new_image_mask, eps=1e-6, power=0.5
+            )
+
+    # Fluorescent files stitching
+    if len(all_if_files) > 0:
+        samples_if = []
+        for file in all_if_files:
+            if ".tif" in file:
+                # path_if = '\\'.join(file.split('\\')[:-1])
+                file_name_if = file.split("\\")[-1]
+                sample_name_if = file_name_if.split(file_separator)[0]
+                map_name_i = file_name_if.split(file_separator)[1].split("_")[0]
+                tile_id = int(file_name_if.split(".tif")[0].split("_")[-1])
+                samples_if.append([file, file_name_if, sample_name_if, map_name_i, tile_id])
+        samples_if = pd.DataFrame(
+            samples_if,
+            columns=("file", "file_name", "sample_name", "map_name", "tile_id"),
+        )
+    
+        df_name = samples_if[samples_if["sample_name"].apply(lambda p: p.split('_')[:-1]==sample_name.split('_')[:-1])]
+        df_map = df_name[df_name["map_name"] == map_name]
+        df_map.sort_values(by='tile_id', inplace=True)
+    
+        tile_if_image = tiff.imread(df_map['file'].iloc[0])
+        if len(tile_if_image.shape)==2:
+            tile_if_image = tile_if_image[None, ...] 
+        elif tile_if_image.shape[0]!=np.min(tile_if_image.shape):
+            tile_if_image = to_zyx(tile_if_image)
+        tile_if_size = tile_if_image.shape
+        new_if_image = np.zeros((tile_if_size[0], shape_y, shape_x))
+        
+        for step_a, sample_a in enumerate(df_map['file']):
+            next_im = tiff.imread(sample_a)
+            if len(next_im.shape)==2:
+                next_im = next_im[None, ...] 
+            elif next_im.shape[0]!=np.min(next_im.shape):
+                next_im = to_zyx(next_im)
+            image_shape = next_im.shape
+            oir_file = sample_a.replace('.tif', '.oir').replace(fluorescent_tag, '_NORI_').split('\\')[-1]
+            res = [i for i in tiles if i['image']==oir_file][0]
+            x_p = res['x_pixel']
+            y_p = res['y_pixel']
+            
+            new_image_mask = np.zeros((shape_y, shape_x))
+        
+            for layer in range(tile_if_size[0]):
+                new_image_mask[
+                    y_p:y_p+image_shape[1], x_p:x_p+image_shape[2]
+                ] = next_im[layer]
+                new_if_image[layer] = blend_distance_feather(
+                    new_if_image[layer], new_image_mask, eps=1e-6, power=0.5
+                )
+        # Correct fluorescence shift
+        f_shift = fluorescence_shift_dict[tile_size[1]]
+        shifted_images = []
+        for layer in range(new_if_image.shape[0]):
+            b_aligned = imshift(
+                new_if_image[layer], shift=f_shift, order=1, mode="constant", cval=0.0
+            )
+            shifted_images.append(b_aligned)
+        all_images = np.concatenate([new_image, shifted_images], axis=0)
+
+        # Save as ImageJ-compatible multi-channel NORI TIFF
+        out_stitched = os.path.join(path_stitched, sample_name.replace('_NORI', '') + "_MAP" + map_name + ".tif")
+        tiff.imwrite(
+            out_stitched,
+            all_images.astype("float32"),
+            imagej=True,
+            metadata={"axes": "CYX"},
+        )
+    else:
+        # Save as ImageJ-compatible multi-channel NORI TIFF
+        out_stitched = os.path.join(path_stitched, sample_name.replace('_NORI', '') + "_MAP" + map_name + ".tif")
+        tiff.imwrite(
+            out_stitched,
+            new_image.astype("float32"),
+            imagej=True,
+            metadata={"axes": "CYX"},
+        )     
+
+def to_zyx(arr):
+    """
+    Convert array to shape (Z, Y, X).
+    Works for (Y, X, Z) and (Z, Y, X).
+    """
+    arr = np.asarray(arr)
+    
+    # Find the axis that is Z (the one with smallest size)
+    z_axis = np.argmin(arr.shape)
+
+    # Move that axis to the front
+    arr = np.moveaxis(arr, z_axis, 0)
+
+    # Ensure output is (Z, Y, X)
+    return arr   
+
+def remove_intermediate_files(path, 
+                                folder,
+                                rename_files_folder,
+                                bg_files_folder,
+                                ffc_files_folder,
+                                decomp_files_folder,
+                                oir_files):
+    """ Fuction remove all intermediate_files after postprocessing"""
+    # remove intermediate folders
+    shutil.rmtree(os.path.join(path, folder, rename_files_folder), ignore_errors=True)
+    shutil.rmtree(os.path.join(path, folder, bg_files_folder), ignore_errors=True)
+    shutil.rmtree(os.path.join(path, folder, ffc_files_folder), ignore_errors=True)
+
+    # remove tif raw files
+    for oir_file in oir_files:
+        if "Zone.Identifier" not in oir_file:
+            file_name = oir_file.split("\\")[-1].split(".oir")[0]
+            if file_name[:3] != "Map":
+                # Convert oir files to tif
+                tif_path = oir_file.replace(".oir", ".tif")
+                if os.path.exists(tif_path):
+                    os.remove(tif_path)
+
+    # remove decomposition files
+    decomp_files = os.listdir(os.path.join(path, folder, decomp_files_folder))
+    for file_name in decomp_files:
+        if '.tif' in file_name:
+            os.remove(os.path.join(path, folder, decomp_files_folder, file_name))
+    
