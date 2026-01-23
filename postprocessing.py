@@ -22,6 +22,8 @@ from utilities import (
     find_stiching_map,
     tiles_stitching,
     file_stitching_3d,
+    file_stitching_custom,
+    remove_intermediate_files
 )
 
 def start(data, notify):
@@ -29,10 +31,10 @@ def start(data, notify):
     Launch postprocessing of NORI images
     """
     # create imagej session
-    os.environ["JAVA_HOME"] = r"C:\Program Files\Eclipse Adoptium\jdk-21.0.8.9-hotspot"
+    os.environ["JAVA_HOME"] = r"C:\Program Files\Eclipse Adoptium\jdk-21.0.9.10-hotspot"
     os.environ["PATH"] = os.environ["JAVA_HOME"] + r"\bin;" + os.environ["PATH"]
     try:
-        ij = imagej.init("sc.fiji:fiji", mode="headless")
+        ij = imagej.init("sc.fiji:fiji", mode="interactive")
     except:
         pass
 
@@ -41,6 +43,7 @@ def start(data, notify):
     stitched_files_folder = data["stitched_files_folder"]
     file_separator = data["file_separator"]
     subfolder_suffix = data["subfolder_suffix"]
+    fluorescent_tag = data["fluorescent_tag"]
     drive_letter = data["drive_letter"]
     network_path = data["network_path"]
     calibration_directories = data["calibration_directories"]
@@ -49,6 +52,10 @@ def start(data, notify):
         drive_letter + calibration_directories, calibration_folder_name
     )
     folders = data["selected_folders"]
+    if 'delete_intermediate_files' in data.keys():
+        remove_tag = data['delete_intermediate_files']
+    else:
+        remove_tag = 'off'
 
     # Dependent varibles
     if subfolder_suffix != "":
@@ -190,6 +197,7 @@ def start(data, notify):
         os.makedirs(os.path.join(path, folder, decomp_files_folder), exist_ok=True)
         composite_dir = os.path.join(path, folder, decomp_files_folder, "composite")
         os.makedirs(composite_dir, exist_ok=True)
+        os.makedirs(path_stitched, exist_ok=True)
 
         notify(
             f"File conversion, background removal, and flat field correction of {folder} folder"
@@ -202,13 +210,14 @@ def start(data, notify):
         )
         for oir_file in oir_files:
             if "Zone.Identifier" not in oir_file:
+                print(oir_file)
                 file_name = oir_file.split("\\")[-1].split(".oir")[0]
                 if file_name[:3] != "Map":
                     # Convert oir files to tif
                     tif_path = oir_file.replace(".oir", ".tif")
                     image_np = oir_to_tif(oir_file, ij, tif_path)
                     # check if IF file
-                    if "_IF_" in oir_file:
+                    if fluorescent_tag in oir_file:
                         all_if_files.append(oir_file.replace(".oir", ".tif"))
                     # Match nori channels
                     if "_NORI_" in oir_file.split("\\")[-2]:
@@ -273,13 +282,12 @@ def start(data, notify):
         # Combine all files
         notify(f"Joining and stitching tiles of {folder} folder")
         for sample_name in pd.unique(samples["sample_name"]):
+            print(sample_name)
             df_name = samples[samples["sample_name"] == sample_name]
             for map_name in pd.unique(df_name["map_name"]):
                 df_map = df_name[df_name["map_name"] == map_name]
                 # tiles_number = df_map['tile_id'].max()
                 tiles_ids = np.sort(pd.unique(df_map["tile_id"]))
-
-                poss_comb = possible_stitching_combinations[len(tiles_ids)]
 
                 (_, all_prot_images, _, _) = (
                     combine_channels(
@@ -295,28 +303,40 @@ def start(data, notify):
                 )
 
                 if len(all_prot_images[0].shape) == 2:
-                    # Compute constant shift
-                    tile_size = all_prot_images[0].shape
-                    tile_size = (3, tile_size[0], tile_size[1])
-                    shift = int(tile_size[1] * 0.05)
+                    file_stitching_custom(
+                            path,
+                            folder,
+                            decomp_files_folder,
+                            path_stitched,
+                            sample_name,
+                            map_name,
+                            all_if_files,
+                            file_separator,
+                            fluorescent_tag,
+                            all_prot_images)
+                    # # Compute constant shift
+                    # poss_comb = possible_stitching_combinations[len(tiles_ids)]
+                    # tile_size = all_prot_images[0].shape
+                    # tile_size = (3, tile_size[0], tile_size[1])
+                    # shift = int(tile_size[1] * 0.05)
 
-                    x, y, shift = find_stiching_map(all_prot_images, poss_comb, shift)
+                    # x, y, shift = find_stiching_map(all_prot_images, poss_comb, shift)
 
-                    # Stitch all tiles to one image
-                    tiles_stitching(
-                        all_if_files,
-                        sample_name,
-                        map_name,
-                        x,
-                        y,
-                        shift,
-                        path,
-                        folder,
-                        decomp_files_folder,
-                        path_stitched,
-                        file_separator,
-                        tile_size,
-                    )
+                    # # Stitch all tiles to one image
+                    # tiles_stitching(
+                    #     all_if_files,
+                    #     sample_name,
+                    #     map_name,
+                    #     x,
+                    #     y,
+                    #     shift,
+                    #     path,
+                    #     folder,
+                    #     decomp_files_folder,
+                    #     path_stitched,
+                    #     file_separator,
+                    #     tile_size,
+                    # )
                 elif len(all_prot_images[0].shape) == 3:
                     file_stitching_3d(
                         path,
@@ -328,3 +348,14 @@ def start(data, notify):
                         all_if_files,
                         file_separator,
                     )
+
+            if remove_tag=='on':
+                remove_intermediate_files(
+                            path, 
+                            folder,
+                            rename_files_folder,
+                            bg_files_folder,
+                            ffc_files_folder,
+                            decomp_files_folder,
+                            oir_files
+                        )

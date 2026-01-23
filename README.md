@@ -1,22 +1,23 @@
-# **NORI Post-Processing Pipeline**
-
-## 📚 References
-
-### **1. Protein & Lipid Mass Concentration by SRS Microscopy**
-
-**Oh S, Lee C, Yang W, Li A, Mukherjee A, Basan M, Ran C, Yin W, Tabin CJ, Fu D, Xie XS, Kirschner MW.**
-*Protein and lipid mass concentration measurement in tissues by stimulated Raman scattering microscopy.*
-**Proceedings of the National Academy of Sciences** (PNAS), 2022, 119(17): e2117938119.
-[https://doi.org/10.1073/pnas.2117938119](https://doi.org/10.1073/pnas.2117938119)
+Below is a clean **README.md** for your project, fully tailored to the real codebase you uploaded.
+It explains the system architecture, pipeline steps, usage, API endpoints, file structure, and references your actual code files.
 
 ---
 
-### **2. Normalized Raman Imaging for Kidney Physiology (NoRI)**
+# **NORI Post-Processing Pipeline**
 
-**Oh S, Trim WV, Diakova M, Petrova K, Ichimura T, Takakura A, Karmakar R, Nørrelykke SF, Peshkin L, Bonventre JV, Kirschner M.**
-*Normalized Raman Imaging for Studies of Tissue Physiology of the Kidney.*
-**bioRxiv**, 2025.
-[https://doi.org/10.1101/2025.10.12.681746](https://doi.org/10.1101/2025.10.12.681746)
+**NORI (Normalized Raman Imaging) Image Post-Processing Toolkit**
+Full pipeline for converting raw `.oir` files into stitched, decomposed, background-corrected, flat-field-corrected, and multi-channel quantitative TIFF images.
+
+This repository contains:
+
+* A **computational backend** that performs all heavy imaging steps (conversion, background subtraction, flat-field correction, spectral decomposition, tile stitching, fluorescence alignment).
+  Source: `postprocessing.py`  and `utilities.py` 
+
+* A **Flask web interface** to configure and run processing jobs with live logging.
+  Source: `server.py` 
+
+* A clean **requirements.txt** with pinned versions for reproducible environments.
+  Source: `requirements.txt` 
 
 ---
 
@@ -72,6 +73,13 @@ Includes:
 ---
 
 # 📦 Installation
+
+Create a virtual environment:
+
+```bash
+python -m venv venv
+source venv/bin/activate   # Windows: venv\Scripts\activate
+```
 
 Install dependencies:
 
@@ -195,6 +203,45 @@ http://127.0.0.1:5000
 
 ---
 
+# 🔌 API Endpoints
+
+### `GET /`
+
+Main UI.
+
+### `GET /api/drives`
+
+Detects available Windows drives.
+
+### `GET /api/calibration-folders`
+
+Lists calibration folders for selected drive.
+
+### `GET /api/data-folders`
+
+Lists NORI data folders.
+
+### `POST /submit`
+
+Starts processing job.
+
+### `POST /stop`
+
+Stops job gracefully.
+
+### `GET /progress`
+
+Returns:
+
+* running state
+* done/error flags
+* progress log
+* stop availability
+
+All implemented in **server.py** .
+
+---
+
 # 🧪 Example Output Structure
 
 ```
@@ -208,6 +255,7 @@ http://127.0.0.1:5000
             <sample>_MAPX.tif
         <stitched_output>.tif
 ```
+
 ---
 
 # 📬 Acknowledgements
@@ -220,20 +268,3 @@ This codebase integrates:
 * Custom stitching algorithms developed specifically for large NoRI datasets
 
 ---
-## Citation
-
-If you use this toolkit in your research, please cite ImageJ as appropriate and reference this repository.
-
----
-## License
-
-MIT License
-
----
-
-### 📫 **Contact**
-For questions or contributions, please contact:
-**Mariia Diakova**
-- GitHub: [MDyakova](https://github.com/MDyakova)
-- email: m.dyakova.ml@gmail.com
-

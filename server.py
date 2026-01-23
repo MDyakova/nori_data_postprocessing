@@ -17,10 +17,12 @@ current_proc: Optional[mp.Process] = None
 log_queue: Optional[mp.Queue] = None
 cancelled_by_user = False
 
+
 def notify(msg: str):
     """Server-side log helper (used for UI/system messages)."""
     print(msg)
     progress_log.append(msg)
+
 
 def available_windows_drives():
     """Check available remote drivers"""
@@ -47,22 +49,153 @@ def join_windows_path(drive, rel):
     return os.path.join(drive + os.sep, rel.lstrip("/\\"))
 
 
-# -------- Subprocess target (DO NOT EDIT) ------
+# -------- Subprocess target (child process) -----
 def _run_postprocessing(data: dict, q: mp.Queue):
     """
     Runs in a separate process. We pass a 'notify' that pushes messages
     into a queue so the main app can display them live.
     """
     from postprocessing import start
+
     def notify_child(msg: str):
-        """Notifications start"""
+        """Send log messages back to parent via queue."""
         try:
-            q.put(msg, block=False)
+            q.put({"type": "log", "msg": msg}, block=False)
         except Exception:
             pass  # avoid blocking if queue is full/unavailable
 
-    # keep your start(...) unchanged:
-    start(data, notify_child)
+    try:
+        # keep your start(...) unchanged, except it receives notify_child
+        start(data, notify_child)
+        # notify parent about success (optional)
+        try:
+            q.put({"type": "status", "status": "ok"}, block=False)
+        except Exception:
+            pass
+    except Exception as e:
+        # send detailed error text to the parent so it can show in UI
+        try:
+            q.put(
+                {
+                    "type": "error",
+                    "msg": f"{type(e).__name__}: {e}",
+                },
+                block=False,
+            )
+        except Exception:
+            pass
+        # re-raise so the child process exits with a non-zero exit code
+        raise
+
+
+def _handle_queue_message(msg, error_state):
+    """
+    Helper: handle one message from the child process queue.
+    msg: can be dict (typed) or plain string.
+    error_state: dict with {"error_seen": bool}
+    """
+    if msg is None:
+        return
+
+    # Structured message from child
+    if isinstance(msg, dict):
+        mtype = msg.get("type")
+        if mtype == "log":
+            text = msg.get("msg", "")
+            if text:
+                progress_log.append(text)
+        elif mtype == "error":
+            error_state["error_seen"] = True
+            err_text = msg.get("msg", "Unknown error")
+            progress_log.append(f"❌ ERROR: {err_text}")
+        elif mtype == "status":
+            # Optional: show status message
+            status_text = msg.get("status", "")
+            if status_text:
+                progress_log.append(f"ℹ️ Status: {status_text}")
+    else:
+        # Old style raw string message
+        progress_log.append(str(msg))
+
+
+# ---------------- Worker Thread ----------------
+def worker(data):
+    """
+    Spawns a child process that runs postprocessing.start(data, notify_child).
+    Streams logs back via a queue. On Stop, or if the child crashes,
+    we go through the error path (logging ❌ ERROR and setting status["error"]).
+    """
+    global current_proc, log_queue, cancelled_by_user
+
+    try:
+        # Import to match your original structure (not used directly)
+        from postprocessing import start  # noqa: F401
+
+        # fresh state
+        cancelled_by_user = False
+
+        # queue for child->parent logs
+        log_queue = mp.Queue()
+        current_proc = mp.Process(target=_run_postprocessing, args=(data, log_queue))
+        current_proc.start()
+
+        error_state = {"error_seen": False}
+
+        # stream logs while process is alive
+        while current_proc.is_alive():
+            try:
+                msg = log_queue.get(timeout=0.2)
+            except Exception:
+                msg = None
+            _handle_queue_message(msg, error_state)
+
+        # drain remaining logs after exit
+        drained = True
+        end_time = time.time() + 0.5
+        while drained and time.time() < end_time:
+            try:
+                msg = log_queue.get_nowait()
+            except Exception:
+                drained = False
+                break
+            _handle_queue_message(msg, error_state)
+
+        exitcode = current_proc.exitcode
+
+        # If user pressed Stop, force error path
+        if cancelled_by_user:
+            raise RuntimeError("Stopped by user")
+
+        # If child crashed or reported an error, treat as failure
+        if error_state["error_seen"] or exitcode not in (0, None):
+            raise RuntimeError(
+                f"Post-processing failed (exit code {exitcode}). See log for details."
+            )
+
+        # Normal completion
+        status.update({"running": False, "done": True, "error": None})
+        notify("✅ Processing complete.")
+
+    except Exception as e:
+        status.update(
+            {
+                "running": False,
+                "done": False,
+                "error": str(e),
+                "cancelled": cancelled_by_user,
+            }
+        )
+        # If the last message is not already an ERROR line, add one
+        if not progress_log or not progress_log[-1].startswith("❌ ERROR"):
+            notify(f"❌ ERROR: {e}")
+    finally:
+        # cleanup
+        try:
+            if current_proc is not None and current_proc.is_alive():
+                current_proc.terminate()
+                current_proc.join(timeout=2)
+        except Exception:
+            pass
 
 
 # ------------------- Routes --------------------
@@ -70,7 +203,7 @@ def _run_postprocessing(data: dict, q: mp.Queue):
 def index():
     """Collect default parameters"""
     defaults = {
-        "drive_letter": "Z:",
+        "drive_letter": "N:",
         "data_folder": r"NoRI\Masha\20250423 Ahmed Colon Cancer D14 NoRI",
         "stitched_files_folder": r"NoRI\Masha\Stitched",
         "powersetting": "UP",
@@ -78,6 +211,7 @@ def index():
         "subfolder_suffix": "",
         "calibration_directories": r"NoRI\Calibration Archive",
         "network_path": r"research.files.med.harvard.edu\Sysbio",
+        "fluorescent_tag" : '_IF_'
     }
     return render_template("home.html", defaults=defaults)
 
@@ -110,68 +244,6 @@ def api_data_folders():
     return jsonify({"base_path": base, "folders": sorted(folders)})
 
 
-# ---------------- Worker Thread ----------------
-def worker(data):
-    """
-    Spawns a child process that runs postprocessing.start(data, notify_child).
-    Streams logs back via a queue. On Stop, we kill the process and raise a
-    controlled error so the except branch is taken (logging ❌ ERROR).
-    """
-    global current_proc, log_queue, cancelled_by_user
-
-    try:
-        from postprocessing import (
-            start,
-        )  # import to match your original structure (not used directly)
-
-        # fresh state
-        cancelled_by_user = False
-
-        # queue for child->parent logs
-        log_queue = mp.Queue()
-        current_proc = mp.Process(target=_run_postprocessing, args=(data, log_queue))
-        current_proc.start()
-
-        # stream logs while process is alive
-        while current_proc.is_alive():
-            try:
-                # poll logs frequently
-                msg = log_queue.get(timeout=0.2)
-                progress_log.append(msg)
-            except Exception:
-                pass
-
-        # drain remaining logs after exit
-        drained = True
-        end_time = time.time() + 0.5
-        while drained and time.time() < end_time:
-            try:
-                msg = log_queue.get_nowait()
-                progress_log.append(msg)
-            except Exception:
-                drained = False
-
-        # If user pressed Stop, force error path
-        if cancelled_by_user:
-            raise RuntimeError("Stopped by user")
-
-        # Normal completion
-        status.update({"running": False, "done": True})
-
-    except Exception as e:
-        status.update({"running": False, "done": True, "error": str(e)})
-        if not progress_log or not progress_log[-1].startswith("❌ ERROR"):
-            notify(f"❌ ERROR: {e}")
-    finally:
-        # cleanup
-        try:
-            if current_proc is not None and current_proc.is_alive():
-                current_proc.terminate()
-                current_proc.join(timeout=2)
-        except Exception:
-            pass
-
-
 @app.post("/submit")
 def submit():
     """Start process"""
@@ -181,7 +253,9 @@ def submit():
 
     # reset status
     progress_log.clear()
-    status.update({"running": True, "done": False, "error": None, "cancelled": False})
+    status.update(
+        {"running": True, "done": False, "error": None, "cancelled": False}
+    )
 
     # start worker thread that manages the subprocess
     t = threading.Thread(target=worker, args=(data,), daemon=True)
@@ -229,4 +303,4 @@ if __name__ == "__main__":
         mp.set_start_method("spawn")
     except RuntimeError:
         pass
-    app.run(debug=True, use_reloader=False)  # avoid double init
+    app.run(host="0.0.0.0", port=8000, debug=True, use_reloader=False)  # avoid double init

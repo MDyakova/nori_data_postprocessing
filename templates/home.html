@@ -23,6 +23,48 @@
     button{border:none;border-radius:12px;padding:12px 16px;cursor:pointer;font-weight:600}
     .primary{background:var(--accent);color:#06121c}
     .ghost{background:transparent;color:var(--ink);border:1px solid #22305a}
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 52px;
+      height: 28px;
+    }
+
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      inset: 0;
+      background-color: #1c2747;
+      transition: .3s;
+      border-radius: 28px;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 22px;
+      width: 22px;
+      left: 3px;
+      bottom: 3px;
+      background-color: #c9d6ff;
+      transition: .3s;
+      border-radius: 50%;
+    }
+
+    input:checked + .slider {
+      background-color: var(--ok); /* #3ddc97 */
+      /* background-color: var(--danger); */
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(24px);
+    }
   </style>
 </head>
 <body>
@@ -81,6 +123,26 @@
         <div class="field">
           <label for="subfolder_suffix">Subfolder suffix</label>
           <input type="text" id="subfolder_suffix" name="subfolder_suffix" value="{{ defaults.subfolder_suffix }}">
+        </div>
+        <div class="field">
+          <label for="fluorescent_tag">Subfolder suffix</label>
+          <input type="text" id="fluorescent_tag" name="fluorescent_tag" value="{{ defaults.fluorescent_tag }}">
+        </div>
+        <!-- Delete intermediate files switch -->
+        <div class="field full">
+          <label>Delete all intermediate files</label>
+          <div style="display:flex;align-items:center;gap:12px;">
+            <label class="switch">
+              <input type="checkbox"
+                    id="delete_intermediate_files"
+                    name="delete_intermediate_files"
+                    checked>
+              <span class="slider"></span>
+            </label>
+            <span style="color:var(--muted);font-size:13px;">
+              Remove temporary processing files after completion
+            </span>
+          </div>
         </div>
         <div class="field full">
           <button class="primary" type="submit">Start postprocessing of NORI images.</button>
