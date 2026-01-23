@@ -203,7 +203,7 @@ def worker(data):
 def index():
     """Collect default parameters"""
     defaults = {
-        "drive_letter": "Z:",
+        "drive_letter": "N:",
         "data_folder": r"NoRI\Masha\20250423 Ahmed Colon Cancer D14 NoRI",
         "stitched_files_folder": r"NoRI\Masha\Stitched",
         "powersetting": "UP",
@@ -303,4 +303,4 @@ if __name__ == "__main__":
         mp.set_start_method("spawn")
     except RuntimeError:
         pass
-    app.run(debug=True, use_reloader=False)  # avoid double init
+    app.run(host="0.0.0.0", port=8000, debug=True, use_reloader=False)  # avoid double init
