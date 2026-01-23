@@ -5,8 +5,8 @@ Fuctions for postprocessing.py
 import os
 import glob
 from typing import List, Tuple, Iterator
-import shutil
 import numpy as np
+import shutil
 import scipy.io as sio
 import cv2
 import pandas as pd
@@ -127,10 +127,19 @@ def oir_to_tif(oir_file, ij, tif_path):
     """
     Convert oir format to tif
     """
-    dataset = ij.io().open(oir_file)
-    image_np = ij.py.from_java(dataset)
-    image_np = image_np.astype("uint32")
-    tiff.imwrite(tif_path, image_np.astype("uint32"))
+    try:
+        dataset = ij.io().open(oir_file)
+        image_np = ij.py.from_java(dataset)
+        image_np = image_np.astype("uint32")
+    except:
+        new_oir_path = os.path.join('saved_oir_files',
+                                    oir_file.split('\\')[-1])
+        shutil.copy(oir_file, new_oir_path)
+        dataset = ij.io().open(new_oir_path)
+        image_np = ij.py.from_java(dataset)
+        image_np = image_np.astype("uint32")
+
+    tiff.imwrite(tif_path, image_np)
     return image_np
 
 
@@ -1067,7 +1076,7 @@ def file_stitching_3d(
                     blended_im = blend_distance_feather(
                         image_crop[layer], image_b[layer], eps=1e-6, power=0.01
                     )
-                    # print(file_name_next, layer, blended_im.max())
+
                     new_image[
                         layer,
                         coords[1] : coords[1] + shape[0],

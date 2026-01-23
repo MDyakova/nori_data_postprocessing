@@ -31,10 +31,10 @@ def start(data, notify):
     Launch postprocessing of NORI images
     """
     # create imagej session
-    os.environ["JAVA_HOME"] = r"C:\Program Files\Eclipse Adoptium\jdk-21.0.8.9-hotspot"
+    os.environ["JAVA_HOME"] = r"C:\Program Files\Eclipse Adoptium\jdk-21.0.9.10-hotspot"
     os.environ["PATH"] = os.environ["JAVA_HOME"] + r"\bin;" + os.environ["PATH"]
     try:
-        ij = imagej.init("sc.fiji:fiji", mode="headless")
+        ij = imagej.init("sc.fiji:fiji", mode="interactive")
     except:
         pass
 
@@ -52,7 +52,10 @@ def start(data, notify):
         drive_letter + calibration_directories, calibration_folder_name
     )
     folders = data["selected_folders"]
-    remove_tag = data['delete_intermediate_files']
+    if 'delete_intermediate_files' in data.keys():
+        remove_tag = data['delete_intermediate_files']
+    else:
+        remove_tag = 'off'
 
     # Dependent varibles
     if subfolder_suffix != "":
@@ -207,6 +210,7 @@ def start(data, notify):
         )
         for oir_file in oir_files:
             if "Zone.Identifier" not in oir_file:
+                print(oir_file)
                 file_name = oir_file.split("\\")[-1].split(".oir")[0]
                 if file_name[:3] != "Map":
                     # Convert oir files to tif
@@ -344,13 +348,14 @@ def start(data, notify):
                         all_if_files,
                         file_separator,
                     )
-            remove_intermediate_files(
-                        path, 
-                        folder,
-                        rename_files_folder,
-                        bg_files_folder,
-                        ffc_files_folder,
-                        decomp_files_folder,
-                        oir_files
-                    )
-            
+
+            if remove_tag=='on':
+                remove_intermediate_files(
+                            path, 
+                            folder,
+                            rename_files_folder,
+                            bg_files_folder,
+                            ffc_files_folder,
+                            decomp_files_folder,
+                            oir_files
+                        )
