@@ -206,7 +206,7 @@ def index():
         "drive_letter": "N:",
         "data_folder": r"NoRI\Masha\20250423 Ahmed Colon Cancer D14 NoRI",
         "stitched_files_folder": r"NoRI\Masha\Stitched",
-        "powersetting": "UP",
+        "powersetting": "30x",
         "file_separator": "_MAP",
         "subfolder_suffix": "",
         "calibration_directories": r"NoRI\Calibration Archive",

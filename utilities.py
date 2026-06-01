@@ -144,7 +144,7 @@ def oir_to_tif(oir_file, ij, tif_path):
 
 
 def match_channels(
-    image_np, oir_file, file_name, masks, path, folder, rename_files_folder
+    image_np, oir_file, file_name, masks, path, folder, rename_files_folder, powersetting
 ):
     """
     Match nori channels and return flat fiels correction mask
@@ -153,25 +153,25 @@ def match_channels(
     immask_channel = None
     if len(image_np.values.shape) == 2:
         if "_Cycle_02\\" in oir_file:
-            renamed_file = file_name + "_channel_waterUP.tif"
+            renamed_file = file_name + f"_channel_water{powersetting}.tif"
             immask_channel = masks[f"water_{str(image_np.values.shape[0])}"]
         elif "_Cycle_01\\" in oir_file:
-            renamed_file = file_name + "_channel_lipidUP.tif"
+            renamed_file = file_name + f"_channel_lipid{powersetting}.tif"
             immask_channel = masks[f"lipid_{str(image_np.values.shape[0])}"]
         elif "_Cycle\\" in oir_file:
-            renamed_file = file_name + "_channel_proteinUP.tif"
+            renamed_file = file_name + f"_channel_protein{powersetting}.tif"
             immask_channel = masks[f"protein_{str(image_np.values.shape[0])}"]
         else:
             immask_channel = None
     elif len(image_np.values.shape) == 4:
         if "_Cycle_02\\" in oir_file:
-            renamed_file = file_name + "_channel_waterUP.tif"
+            renamed_file = file_name + f"_channel_water{powersetting}.tif"
             immask_channel = masks[f"water_{str(image_np.values.shape[1])}"]
         elif "_Cycle_01\\" in oir_file:
-            renamed_file = file_name + "_channel_lipidUP.tif"
+            renamed_file = file_name + f"_channel_lipid{powersetting}.tif"
             immask_channel = masks[f"lipid_{str(image_np.values.shape[1])}"]
         elif "_Cycle\\" in oir_file:
-            renamed_file = file_name + "_channel_proteinUP.tif"
+            renamed_file = file_name + f"_channel_protein{powersetting}.tif"
             immask_channel = masks[f"protein_{str(image_np.values.shape[1])}"]
         else:
             immask_channel = None
@@ -1102,35 +1102,39 @@ def file_stitching_3d(
     else:
         # Fluorescent files stitching
         all_if_layers = []
-        if_file_test_name = all_if_files[0]
-        if_file_test = tiff.imread(if_file_test_name)
-        for if_layer in range(if_file_test.shape[-1]):
-            new_image = np.zeros((layers_number, shape_y, shape_x)).astype("uint16")
-            for x_i in range(1, max_x + 1):
-                for y_i in range(1, max_y + 1):
-                    file_name_next = f"{prefix}x{x_i}_y{y_i}.tif"
-                    file_name_next = list(
-                        filter(lambda p: file_name_next in p, all_if_files)
-                    )[0]
-                    image_b = tiff.imread(file_name_next)
-                    image_b = image_b[:, :, :, if_layer]
-                    coords = coords_dict[(x_i, y_i)]
-                    shape = image_b[0].shape
-                    image_crop = new_image[
-                        :,
-                        coords[1] : coords[1] + shape[0],
-                        coords[0] : coords[0] + shape[1],
-                    ]
-                    for layer in range(layers_number):
-                        blended_im = blend_distance_feather(
-                            image_crop[layer], image_b[layer], eps=1e-6, power=0.01
-                        )
-                        new_image[
-                            layer,
+        if_folders = np.unique([i.split('\\')[-2] for i in all_if_files])
+        for if_folder in if_folders:
+            all_if_files_f = list(filter(lambda p: p.split('\\')[-2] == if_folder, all_if_files))
+
+            if_file_test_name = all_if_files_f[0]
+            if_file_test = tiff.imread(if_file_test_name)
+            for if_layer in range(if_file_test.shape[-1]):
+                new_image = np.zeros((layers_number, shape_y, shape_x)).astype("uint16")
+                for x_i in range(1, max_x + 1):
+                    for y_i in range(1, max_y + 1):
+                        file_name_next = f"{prefix}x{x_i}_y{y_i}.tif"
+                        file_name_next = list(
+                            filter(lambda p: file_name_next in p, all_if_files_f)
+                        )[0]
+                        image_b = tiff.imread(file_name_next)
+                        image_b = image_b[:, :, :, if_layer]
+                        coords = coords_dict[(x_i, y_i)]
+                        shape = image_b[0].shape
+                        image_crop = new_image[
+                            :,
                             coords[1] : coords[1] + shape[0],
                             coords[0] : coords[0] + shape[1],
-                        ] = blended_im
-            all_if_layers.append(new_image)
+                        ]
+                        for layer in range(layers_number):
+                            blended_im = blend_distance_feather(
+                                image_crop[layer], image_b[layer], eps=1e-6, power=0.01
+                            )
+                            new_image[
+                                layer,
+                                coords[1] : coords[1] + shape[0],
+                                coords[0] : coords[0] + shape[1],
+                            ] = blended_im
+                all_if_layers.append(new_image)
         all_if_layers = np.stack(all_if_layers)
 
         # Correct flourescence shift

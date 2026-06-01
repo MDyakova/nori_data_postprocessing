@@ -56,6 +56,7 @@ def start(data, notify):
         remove_tag = data['delete_intermediate_files']
     else:
         remove_tag = 'off'
+    powersetting = data["powersetting"]
 
     # Dependent varibles
     if subfolder_suffix != "":
@@ -229,6 +230,7 @@ def start(data, notify):
                             path,
                             folder,
                             rename_files_folder,
+                            powersetting
                         )
 
                         # Processing (1) background subtraction
